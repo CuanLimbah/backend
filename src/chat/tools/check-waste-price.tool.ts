@@ -18,8 +18,19 @@ const checkWastePriceTool: AgentTool = {
       .enum(['food', 'oil'])
       .describe('The type of waste: "food" for food waste, "oil" for used cooking oil'),
   }),
-  execute: async (args: { waste_type: 'food' | 'oil' }) => {
+  execute: async (args: { waste_type?: 'food' | 'oil' }) => {
     if (!wastePriceModel) return 'Waste price service is not available.';
+
+    if (!args.waste_type) {
+      const prices = await wastePriceModel.find().lean().exec();
+      if (prices.length === 0) return 'Harga limbah belum tersedia.';
+      return prices
+        .map((p) => {
+          const label = p.waste_type === 'food' ? 'Limbah Makanan' : 'Minyak Jelantah';
+          return `${label}: Rp ${p.price_per_kg.toLocaleString('id-ID')}/kg`;
+        })
+        .join('\n');
+    }
 
     const price = await wastePriceModel
       .findOne({ waste_type: args.waste_type })

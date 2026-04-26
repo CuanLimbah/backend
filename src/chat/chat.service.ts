@@ -215,7 +215,9 @@ Rules:
         const tool = globalToolRegistry.getTool(call.toolName);
         if (!tool) continue;
 
-        const result = await tool.execute((call as any).args, toolContext);
+        console.log(`[ToolCall] ${call.toolName}`, call);
+        const args = (call as any).args || (call as any).input || {};
+        const result = await tool.execute(args, toolContext);
 
         if (typeof result === 'string') {
           // Tool returned text — append as context for the reply
