@@ -4,6 +4,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { embed, generateText } from 'ai';
+import * as crypto from 'crypto';
 
 import { WastePriceEntity } from '../database/schemas/price.schema';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
@@ -20,6 +21,11 @@ import './tools/navigate-website.tool';
 import './tools/check-waste-price.tool';
 import './tools/get-submission-status.tool';
 import './tools/find-drop-point.tool';
+
+function toUUID(userId: string): string {
+  const hash = crypto.createHash('md5').update(userId).digest('hex');
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20)}`;
+}
 
 @Injectable()
 export class ChatService implements OnModuleInit {
@@ -128,7 +134,7 @@ export class ChatService implements OnModuleInit {
     try {
       const { embedding } = await embed({ model: getEmbeddingModel(this.config), value: content });
       await this.supabase.from('user_memories').insert({
-        user_id: userId,
+        user_id: toUUID(userId),
         memory_type: 'chat',
         content,
         embedding,
@@ -160,7 +166,7 @@ export class ChatService implements OnModuleInit {
               query_embedding: embedding,
               match_threshold: 0.6,
               match_count: 5,
-              p_user_id: userId,
+              p_user_id: toUUID(userId),
             }),
           );
         }
