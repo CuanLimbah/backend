@@ -6,6 +6,7 @@ import { AdminModule } from './admin/admin.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { ChatModule } from './chat/chat.module';
 import { DatabaseModule } from './database/database.module';
 import { DropPointsModule } from './drop-points/drop-points.module';
 import { InfrastructureModule } from './infrastructure/infrastructure.module';
@@ -36,6 +37,7 @@ import { UsersModule } from './users/users.module';
     }),
     DatabaseModule,
     InfrastructureModule,
+    ChatModule,
     AuthModule,
     UsersModule,
     SubmissionsModule,
