@@ -31,7 +31,7 @@ export class AuthService {
 
   private readonly googleRedirectUri =
     process.env.GOOGLE_REDIRECT_URI?.trim() ||
-    'http://localhost:3000/auth/google/callback';
+    'http://localhost:3001/auth/google/callback';
 
   constructor(
     @InjectModel(UserEntity.name)
