@@ -1,33 +1,12 @@
-<<<<<<< HEAD
 import {
-  Body,
   Controller,
+  Post,
   Get,
+  Body,
+  Req,
   HttpCode,
   HttpStatus,
-  Post,
-  Req,
 } from '@nestjs/common';
-import type { Request } from 'express';
-import { ChatService } from './chat.service';
-
-interface ChatRequestBody {
-  message?: string;
-  userId?: string;
-}
-
-interface KnowledgeRequestBody {
-  title?: string;
-  content?: string;
-}
-
-@Controller('api')
-export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
-
-  @Get('status')
-=======
-import { Controller, Post, Get, Body, Req, HttpCode, HttpStatus } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import { JwtPayload } from '../auth/jwt-payload.interface';
@@ -41,38 +20,25 @@ export class ChatController {
   ) {}
 
   @Get('chat/status')
->>>>>>> cc69ae98d34a300ba14efc95ea8bc82cd8f12463
   getStatus() {
     return this.chatService.getStatus();
   }
 
-  @Post('chat')
-  @HttpCode(HttpStatus.OK)
-<<<<<<< HEAD
-  async chat(@Body() body: ChatRequestBody, @Req() request: Request) {
-    const message = body.message?.trim();
-
-    if (!message) {
-      return { error: 'Message is required.' };
+  @Get('chat/history')
+  async getChatHistory(@Req() req: Request) {
+    try {
+      const token = req.headers.authorization?.replace('Bearer ', '');
+      if (!token) return { messages: [] };
+      const payload = this.jwtService.verify<JwtPayload>(token);
+      const messages = await this.chatService.getHistory(payload.sub);
+      return { messages };
+    } catch {
+      return { messages: [] };
     }
-
-    const headerUserId = request.headers['x-user-id'];
-    const userId =
-      body.userId ||
-      (Array.isArray(headerUserId) ? headerUserId[0] : headerUserId) ||
-      'anonymous';
-
-    return this.chatService.handleUserMessage(userId, message);
   }
 
-  @Post('knowledge')
-  async ingestKnowledge(@Body() body: KnowledgeRequestBody) {
-    if (!body.title?.trim() || !body.content?.trim()) {
-      return { error: 'title and content are required.' };
-    }
-
-    return this.chatService.ingestKnowledge(body.title.trim(), body.content);
-=======
+  @Post('chat')
+  @HttpCode(HttpStatus.OK)
   async handleChat(
     @Body() body: { message: string },
     @Req() req: Request,
@@ -105,6 +71,5 @@ export class ChatController {
     }
 
     return this.chatService.ingestKnowledge(body.title, body.content);
->>>>>>> cc69ae98d34a300ba14efc95ea8bc82cd8f12463
   }
 }

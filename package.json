@@ -22,10 +22,7 @@
     "ingest:batch": "ts-node src/chat/scripts/ingest.ts --batch src/chat/scripts/knowledge.example.json"
   },
   "dependencies": {
-<<<<<<< HEAD
-=======
     "@ai-sdk/google": "^3.0.64",
->>>>>>> cc69ae98d34a300ba14efc95ea8bc82cd8f12463
     "@ai-sdk/mistral": "^3.0.30",
     "@ai-sdk/openai": "^3.0.53",
     "@nestjs/bullmq": "^11.0.4",
@@ -35,11 +32,7 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/mongoose": "^11.0.4",
     "@nestjs/platform-express": "^11.0.1",
-<<<<<<< HEAD
-    "@supabase/supabase-js": "^2.104.0",
-=======
     "@supabase/supabase-js": "^2.104.1",
->>>>>>> cc69ae98d34a300ba14efc95ea8bc82cd8f12463
     "ai": "^6.0.168",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.76.0",
