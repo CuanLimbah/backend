@@ -6,6 +6,11 @@ import {
   ActivityEventSchema,
 } from './schemas/activity-event.schema';
 import { DropPointEntity, DropPointSchema } from './schemas/drop-point.schema';
+import { PaymentEntity, PaymentSchema } from './schemas/payment.schema';
+import {
+  PickupRouteEntity,
+  PickupRouteSchema,
+} from './schemas/pickup-route.schema';
 import { WastePriceEntity, WastePriceSchema } from './schemas/price.schema';
 import {
   WasteSubmissionEntity,
@@ -24,6 +29,8 @@ import { UserEntity, UserSchema } from './schemas/user.schema';
       { name: UserEntity.name, schema: UserSchema },
       { name: WastePriceEntity.name, schema: WastePriceSchema },
       { name: DropPointEntity.name, schema: DropPointSchema },
+      { name: PickupRouteEntity.name, schema: PickupRouteSchema },
+      { name: PaymentEntity.name, schema: PaymentSchema },
       { name: WasteSubmissionEntity.name, schema: WasteSubmissionSchema },
       { name: TransactionEntity.name, schema: TransactionSchema },
       { name: ActivityEventEntity.name, schema: ActivityEventSchema },

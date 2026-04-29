@@ -115,7 +115,7 @@ export class AuthService {
     return {
       accessToken: await this.issueAccessToken(publicUser),
       user: publicUser,
-      redirectTo: user.role === 'admin' ? '/admin' : '/dashboard',
+      redirectTo: this.getRedirectForRole(user.role),
     };
   }
 
@@ -245,7 +245,7 @@ export class AuthService {
     return {
       accessToken: await this.issueAccessToken(publicUser),
       user: publicUser,
-      redirectTo: user.role === 'admin' ? '/admin' : '/dashboard',
+      redirectTo: this.getRedirectForRole(user.role),
     };
   }
 
@@ -333,5 +333,17 @@ export class AuthService {
     };
 
     return this.jwtService.signAsync(payload);
+  }
+
+  private getRedirectForRole(role: PublicUser['role']): string {
+    if (role === 'admin') {
+      return '/admin';
+    }
+
+    if (role === 'driver') {
+      return '/driver';
+    }
+
+    return '/dashboard';
   }
 }

@@ -9,7 +9,10 @@ import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
 import { DatabaseModule } from './database/database.module';
 import { DropPointsModule } from './drop-points/drop-points.module';
+import { DriversModule } from './drivers/drivers.module';
 import { InfrastructureModule } from './infrastructure/infrastructure.module';
+import { PaymentsModule } from './payments/payments.module';
+import { PickupRoutesModule } from './pickup-routes/pickup-routes.module';
 import { buildRedisConnectionOptions } from './infrastructure/redis-connection.util';
 import { PricesModule } from './prices/prices.module';
 import { SubmissionsModule } from './submissions/submissions.module';
@@ -39,6 +42,9 @@ import { UsersModule } from './users/users.module';
     InfrastructureModule,
     ChatModule,
     AuthModule,
+    DriversModule,
+    PickupRoutesModule,
+    PaymentsModule,
     UsersModule,
     SubmissionsModule,
     TransactionsModule,

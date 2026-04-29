@@ -22,8 +22,8 @@ export class UserEntity implements UserRecord {
   @Prop({ required: true })
   password_hash: string;
 
-  @Prop({ required: true, enum: ['admin', 'user'] })
-  role: 'admin' | 'user';
+  @Prop({ required: true, enum: ['admin', 'user', 'driver'] })
+  role: 'admin' | 'user' | 'driver';
 
   @Prop({ required: true, enum: ['active', 'inactive'], default: 'active' })
   status: 'active' | 'inactive';
@@ -33,6 +33,12 @@ export class UserEntity implements UserRecord {
 
   @Prop()
   avatar_url?: string;
+
+  @Prop({ trim: true })
+  phone_number?: string;
+
+  @Prop({ trim: true })
+  vehicle_number?: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(UserEntity);
