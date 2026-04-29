@@ -1,7 +1,14 @@
 import { z } from 'zod';
 import { AgentTool, globalToolRegistry } from './tool.registry';
 
-const allowedRoutes = new Set(['/', '/login', '/register', '/dashboard', '/admin']);
+const allowedRoutes = new Set([
+  '/',
+  '/login',
+  '/register',
+  '/dashboard',
+  '/admin',
+  '/driver',
+]);
 
 function normalizeRoute(route?: string) {
   const cleanRoute = route?.trim() || '/';
@@ -11,7 +18,7 @@ function normalizeRoute(route?: string) {
 const navigateWebsiteTool: AgentTool = {
   name: 'navigate_website',
   description:
-    'Navigate the CuanLimbah frontend to one of these routes: /, /login, /register, /dashboard, /admin.',
+    'Navigate the CuanLimbah frontend to one of these routes: /, /login, /register, /dashboard, /admin, /driver.',
   parameters: z.object({
     route: z
       .string()
@@ -26,7 +33,7 @@ const navigateWebsiteTool: AgentTool = {
         route: z.string().optional(),
         reason: z.string().optional(),
       })
-      .safeParse(args);
+      .safeParse(typeof args === 'string' ? safeParseJson(args) : args);
 
     const route = parsed.success ? normalizeRoute(parsed.data.route) : '/';
     const reason =
@@ -39,3 +46,11 @@ const navigateWebsiteTool: AgentTool = {
 };
 
 globalToolRegistry.registerTool(navigateWebsiteTool);
+
+function safeParseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}

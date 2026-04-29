@@ -23,12 +23,12 @@ export class ToolRegistry {
     return this.tools.get(name);
   }
 
-  getAllTools(): Record<string, { description: string; parameters: z.ZodType }> {
+  getAllTools(): Record<string, { description: string; inputSchema: z.ZodType }> {
     const result: Record<string, any> = {};
     for (const [name, tool] of this.tools.entries()) {
       result[name] = {
         description: tool.description,
-        parameters: tool.parameters,
+        inputSchema: tool.parameters,
       };
     }
     return result;

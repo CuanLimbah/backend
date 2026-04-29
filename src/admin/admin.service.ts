@@ -3,6 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AdminStats, WasteType } from '../common/models';
 import { toPublicUser } from '../common/utils';
+import { PaymentEntity } from '../database/schemas/payment.schema';
+import { PickupRouteEntity } from '../database/schemas/pickup-route.schema';
 import { WastePriceEntity } from '../database/schemas/price.schema';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
 import { TransactionEntity } from '../database/schemas/transaction.schema';
@@ -21,12 +23,16 @@ export class AdminService {
     private readonly transactionModel: Model<TransactionEntity>,
     @InjectModel(WastePriceEntity.name)
     private readonly priceModel: Model<WastePriceEntity>,
+    @InjectModel(PickupRouteEntity.name)
+    private readonly pickupRouteModel: Model<PickupRouteEntity>,
+    @InjectModel(PaymentEntity.name)
+    private readonly paymentModel: Model<PaymentEntity>,
     private readonly usersService: UsersService,
     private readonly transactionsService: TransactionsService,
   ) {}
 
   async getDashboard() {
-    const [stats, prices, pendingSubmissions, users, withdrawals] =
+    const [stats, prices, pendingSubmissions, users, drivers, pickupRoutes, payments, withdrawals] =
       await Promise.all([
         this.getStats(),
         this.priceModel.find().select({ _id: 0, __v: 0 }).sort({ waste_type: 1 }).lean().exec(),
@@ -43,6 +49,9 @@ export class AdminService {
           .lean()
           .exec(),
         this.getUsers(),
+        this.getDrivers(),
+        this.pickupRouteModel.find().select({ _id: 0, __v: 0 }).sort({ scheduled_at: -1 }).lean().exec(),
+        this.paymentModel.find().select({ _id: 0, __v: 0 }).sort({ created_at: -1 }).lean().exec(),
         this.transactionsService.findAllWithdrawals(),
       ]);
 
@@ -51,8 +60,22 @@ export class AdminService {
       prices,
       pending_submissions: pendingSubmissions,
       users,
+      drivers,
+      pickup_routes: pickupRoutes,
+      payments,
       withdrawals,
     };
+  }
+
+  async getDrivers() {
+    const drivers = await this.userModel
+      .find({ role: 'driver' })
+      .select({ _id: 0, __v: 0 })
+      .sort({ created_at: -1 })
+      .lean()
+      .exec();
+
+    return drivers.map((driver) => toPublicUser(driver));
   }
 
   async getUsers(search?: string) {

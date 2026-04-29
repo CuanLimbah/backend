@@ -96,6 +96,7 @@ export class ChatService implements OnModuleInit {
       llm: {
         provider: this.config.get('LLM_PROVIDER') || 'mistral',
       },
+      tools: Object.keys(globalToolRegistry.getAllTools()),
     };
   }
 
@@ -224,7 +225,7 @@ export class ChatService implements OnModuleInit {
             query_embedding: embedding,
             match_threshold: 0.7,
             match_count: 3,
-          }),
+          }) as unknown as Promise<any>,
         ];
 
         if (isAuthenticated) {
@@ -234,7 +235,7 @@ export class ChatService implements OnModuleInit {
               match_threshold: 0.6,
               match_count: 5,
               p_user_id: toUUID(userId),
-            }),
+            }) as unknown as Promise<any>,
           );
         }
 
@@ -291,7 +292,8 @@ Rules:
         if (!tool) continue;
 
         this.logger.log(`[ToolCall] ${call.toolName}`);
-        const args = (call as any).args || (call as any).input || {};
+        const rawArgs = (call as any).args || (call as any).input || {};
+        const args = this.parseToolArgs(rawArgs);
         const result = await tool.execute(args, toolContext);
 
         if (typeof result === 'string') {
@@ -311,5 +313,17 @@ Rules:
     }
 
     return { reply: finalReply, action: clientAction };
+  }
+
+  private parseToolArgs(args: unknown): unknown {
+    if (typeof args !== 'string') {
+      return args;
+    }
+
+    try {
+      return JSON.parse(args);
+    } catch {
+      return {};
+    }
   }
 }

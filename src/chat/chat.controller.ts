@@ -19,6 +19,11 @@ export class ChatController {
     private readonly jwtService: JwtService,
   ) {}
 
+  @Get('status')
+  getLegacyStatus() {
+    return this.chatService.getStatus();
+  }
+
   @Get('chat/status')
   getStatus() {
     return this.chatService.getStatus();
@@ -40,14 +45,17 @@ export class ChatController {
   @Post('chat')
   @HttpCode(HttpStatus.OK)
   async handleChat(
-    @Body() body: { message: string },
+    @Body() body: { message: string; userId?: string },
     @Req() req: Request,
   ) {
     if (!body.message) {
       return { error: 'Message is required.' };
     }
 
-    let userId = 'anonymous';
+    let userId =
+      body.userId ||
+      (req.headers['x-user-id'] as string | undefined) ||
+      'anonymous';
     let isAuthenticated = false;
 
     try {
