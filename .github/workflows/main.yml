@@ -1,0 +1,43 @@
+name: Google Cloud Function Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to Cloud Functions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GOOGLE_CREDENTIALS }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Deploy Cloud Function (Gen 2)
+        run: |
+          gcloud functions deploy cuan-limbah \
+            --region=asia-southeast2 \
+            --runtime=nodejs22 \
+            --gen2 \
+            --source=. \
+            --entry-point=cuanLimbah \
+            --trigger-http \
+            --allow-unauthenticated \
+            --timeout=540s \
+            --memory=1GiB \
+            --service-account=renz-cloud@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+            --set-env-vars=NODE_ENV=production,PORT=8080,FRONTEND_URL=${{ secrets.FRONTEND_URL }},MONGODB_URI=${{ secrets.MONGODB_URI }},MONGODB_DB_NAME=${{ secrets.MONGODB_DB_NAME }},UPSTASH_REDIS_REST_URL=${{ secrets.UPSTASH_REDIS_REST_URL }},UPSTASH_REDIS_REST_TOKEN=${{ secrets.UPSTASH_REDIS_REST_TOKEN }},QUEUE_PREFIX=cuanlimbah,JWT_SECRET=${{ secrets.JWT_SECRET }},JWT_EXPIRES_IN=7d,GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }},CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }},CLOUDINARY_API_KEY=${{ secrets.CLOUDINARY_API_KEY }},CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }},AUTO_SEED=false,LLM_PROVIDER=${{ secrets.LLM_PROVIDER }},EMBEDDING_PROVIDER=${{ secrets.EMBEDDING_PROVIDER }},MISTRAL_API_KEY=${{ secrets.MISTRAL_API_KEY }},MISTRAL_MODEL=mistral-small-latest,OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},OPENAI_MODEL=gpt-4o-mini,SUPABASE_URL=${{ secrets.SUPABASE_URL }},SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }},MIDTRANS_SERVER_KEY=${{ secrets.MIDTRANS_SERVER_KEY }},MIDTRANS_CLIENT_KEY=${{ secrets.MIDTRANS_CLIENT_KEY }},MIDTRANS_IS_PRODUCTION=${{ secrets.MIDTRANS_IS_PRODUCTION }}
+
+      - name: Check Function Exists
+        run: gcloud functions describe cuan-limbah --region=asia-southeast2 --gen2
