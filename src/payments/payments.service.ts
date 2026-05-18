@@ -22,8 +22,7 @@ export class PaymentsService {
 
   private readonly midtransServerKey = process.env.MIDTRANS_SERVER_KEY?.trim();
 
-  private readonly midtransIsProduction =
-    process.env.MIDTRANS_IS_PRODUCTION?.trim().toLowerCase() === 'true';
+  private readonly midtransIsProduction = this.resolveMidtransIsProduction();
 
   constructor(
     @InjectModel(PaymentEntity.name)
@@ -290,6 +289,20 @@ export class PaymentsService {
   private getMidtransAuthorizationHeader(): string {
     const credential = Buffer.from(`${this.midtransServerKey}:`).toString('base64');
     return `Basic ${credential}`;
+  }
+
+  private resolveMidtransIsProduction(): boolean {
+    const serverKey = this.midtransServerKey || '';
+
+    if (serverKey.startsWith('SB-Mid-')) {
+      return false;
+    }
+
+    if (serverKey.startsWith('Mid-')) {
+      return true;
+    }
+
+    return process.env.MIDTRANS_IS_PRODUCTION?.trim().toLowerCase() === 'true';
   }
 
   private getEnabledPayments(method: PaymentMethod): string[] {
