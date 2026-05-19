@@ -292,6 +292,10 @@ Guardrails:
       return !!this.config.get<string>('OPENAI_API_KEY');
     }
 
+    if (provider === 'gemini') {
+      return !!this.config.get<string>('GEMINI_API_KEY');
+    }
+
     return !!this.config.get<string>('MISTRAL_API_KEY');
   }
 }

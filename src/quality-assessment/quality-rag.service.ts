@@ -26,6 +26,18 @@ const FALLBACK_SOP: Record<'food' | 'oil', string[]> = {
   ],
 };
 
+const QUALITY_KEYWORDS = [
+  'sop',
+  'grade',
+  'kualitas',
+  'kriteria',
+  'kontaminasi',
+  'reject',
+  'grading',
+];
+
+const QUALITY_DOCUMENT_TYPES = ['quality_sop', 'sop', 'quality'];
+
 @Injectable()
 export class QualityRagService {
   private readonly logger = new Logger(QualityRagService.name);
@@ -70,30 +82,10 @@ export class QualityRagService {
         return fallback;
       }
 
-      const wasteKeywords =
-        input.wasteType === 'oil'
-          ? ['minyak', 'jelantah', 'oil']
-          : ['makanan', 'sisa', 'food', 'organik'];
       const chunks = data
-        .map((row: Record<string, unknown>): RetrievedQualityChunk => ({
-          title: typeof row.title === 'string' ? row.title : undefined,
-          content: String(row.content ?? ''),
-          score:
-            typeof row.similarity === 'number'
-              ? row.similarity
-              : typeof row.score === 'number'
-                ? row.score
-                : undefined,
-        }))
+        .map((row: Record<string, unknown>) => this.mapRetrievedRow(row))
         .filter((chunk) => chunk.content.trim().length > 0)
-        .filter((chunk) => {
-          const content = `${chunk.title ?? ''} ${chunk.content}`.toLowerCase();
-          return (
-            wasteKeywords.some((keyword) => content.includes(keyword)) ||
-            content.includes('grade') ||
-            content.includes('kualitas')
-          );
-        });
+        .filter((chunk) => this.isRelevantChunk(chunk, input.wasteType));
 
       if (chunks.length === 0) {
         return fallback;
@@ -144,6 +136,135 @@ export class QualityRagService {
       return !!this.config.get<string>('OPENAI_API_KEY');
     }
 
+    if (this.embeddingProvider === 'gemini') {
+      return !!this.config.get<string>('GEMINI_API_KEY');
+    }
+
     return !!this.config.get<string>('MISTRAL_API_KEY');
+  }
+
+  private mapRetrievedRow(
+    row: Record<string, unknown>,
+  ): RetrievedQualityChunk & { metadata?: Record<string, unknown> } {
+    return {
+      title: typeof row.title === 'string' ? row.title : undefined,
+      content: String(row.content ?? ''),
+      score:
+        typeof row.similarity === 'number'
+          ? row.similarity
+          : typeof row.score === 'number'
+            ? row.score
+            : undefined,
+      metadata: this.extractMetadata(row),
+    };
+  }
+
+  private extractMetadata(row: Record<string, unknown>): Record<string, unknown> {
+    const metadata =
+      row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+        ? (row.metadata as Record<string, unknown>)
+        : {};
+
+    return {
+      ...metadata,
+      wasteType: row.wasteType ?? metadata.wasteType,
+      waste_type: row.waste_type ?? metadata.waste_type,
+      documentType: row.documentType ?? metadata.documentType,
+      document_type: row.document_type ?? metadata.document_type,
+      category: row.category ?? metadata.category,
+      tags: row.tags ?? metadata.tags,
+    };
+  }
+
+  private isRelevantChunk(
+    chunk: RetrievedQualityChunk & { metadata?: Record<string, unknown> },
+    wasteType: 'food' | 'oil',
+  ): boolean {
+    const searchableText = this.buildSearchableText(chunk);
+    const wasteMatchesByMetadata = this.matchesWasteMetadata(
+      chunk.metadata,
+      wasteType,
+    );
+    const documentTypeMatches = this.matchesDocumentMetadata(chunk.metadata);
+    const hasWasteKeyword = this.getWasteKeywords(wasteType).some((keyword) =>
+      searchableText.includes(keyword),
+    );
+    const hasQualityKeyword = QUALITY_KEYWORDS.some((keyword) =>
+      searchableText.includes(keyword),
+    );
+
+    if (wasteMatchesByMetadata === false || documentTypeMatches === false) {
+      return false;
+    }
+
+    if (wasteMatchesByMetadata === true) {
+      return hasQualityKeyword || documentTypeMatches === true;
+    }
+
+    return hasWasteKeyword && hasQualityKeyword;
+  }
+
+  private buildSearchableText(
+    chunk: RetrievedQualityChunk & { metadata?: Record<string, unknown> },
+  ): string {
+    const metadataText = chunk.metadata
+      ? Object.values(chunk.metadata)
+          .flatMap((value) => (Array.isArray(value) ? value : [value]))
+          .filter((value) => value != null)
+          .join(' ')
+      : '';
+
+    return `${chunk.title ?? ''} ${chunk.content} ${metadataText}`.toLowerCase();
+  }
+
+  private getWasteKeywords(wasteType: 'food' | 'oil'): string[] {
+    return wasteType === 'oil'
+      ? ['minyak', 'jelantah', 'oil']
+      : ['makanan', 'sisa makanan', 'food', 'organik'];
+  }
+
+  private matchesWasteMetadata(
+    metadata: Record<string, unknown> | undefined,
+    wasteType: 'food' | 'oil',
+  ): boolean | null {
+    const value = this.stringifyMetadataValue(
+      metadata?.wasteType ?? metadata?.waste_type,
+    );
+
+    if (!value) {
+      return null;
+    }
+
+    if (value === wasteType) {
+      return true;
+    }
+
+    return this.getWasteKeywords(wasteType).some((keyword) =>
+      value.includes(keyword),
+    );
+  }
+
+  private matchesDocumentMetadata(
+    metadata: Record<string, unknown> | undefined,
+  ): boolean | null {
+    const value = this.stringifyMetadataValue(
+      metadata?.documentType ?? metadata?.document_type,
+    );
+
+    if (!value) {
+      return null;
+    }
+
+    return QUALITY_DOCUMENT_TYPES.some((documentType) =>
+      value.includes(documentType),
+    );
+  }
+
+  private stringifyMetadataValue(value: unknown): string {
+    if (Array.isArray(value)) {
+      return value.map((item) => String(item).toLowerCase()).join(' ');
+    }
+
+    return value == null ? '' : String(value).toLowerCase();
   }
 }

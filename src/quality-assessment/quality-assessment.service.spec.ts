@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { QualityAssessmentService } from './quality-assessment.service';
 
 function queryResult<T>(value: T) {
@@ -79,6 +79,18 @@ describe('QualityAssessmentService', () => {
     expect(result.ragSource).toBe('fallback_sop');
   });
 
+  it('returns 404 when submission is not found', async () => {
+    const { service } = createService({ submission: null });
+
+    await expect(
+      service.analyzeSubmissionQuality({
+        submissionId: 'missing-submission',
+        requestedBy: 'admin-1',
+        conditionDescription: 'Minyak agak keruh.',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('uses Supabase RAG result source when retrieval is available', async () => {
     const { service } = createService({ ragSource: 'rag' });
 
@@ -140,5 +152,31 @@ describe('QualityAssessmentService', () => {
       }),
       { new: true },
     );
+  });
+
+  it('uses low confidence when condition description is vague', async () => {
+    const { service } = createService();
+
+    const result = await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Keruh',
+    });
+
+    expect(result.confidence).toBeLessThanOrEqual(0.55);
+    expect(result.requiresAdminReview).toBe(true);
+  });
+
+  it('recommends grade C when description mentions many sediments or mixed water', async () => {
+    const { service } = createService();
+
+    const result = await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Minyak terlihat bercampur air dan banyak endapan.',
+    });
+
+    expect(result.recommendedGrade).toBe('C');
+    expect(result.contaminationLevel).toBe('high');
   });
 });
