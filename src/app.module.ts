@@ -13,6 +13,7 @@ import { DriversModule } from './drivers/drivers.module';
 import { InfrastructureModule } from './infrastructure/infrastructure.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PickupRoutesModule } from './pickup-routes/pickup-routes.module';
+import { QualityAssessmentModule } from './quality-assessment/quality-assessment.module';
 import { buildRedisConnectionOptions } from './infrastructure/redis-connection.util';
 import { PricesModule } from './prices/prices.module';
 import { SubmissionsModule } from './submissions/submissions.module';
@@ -45,6 +46,7 @@ import { UsersModule } from './users/users.module';
     DriversModule,
     PickupRoutesModule,
     PaymentsModule,
+    QualityAssessmentModule,
     UsersModule,
     SubmissionsModule,
     TransactionsModule,

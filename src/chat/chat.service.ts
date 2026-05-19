@@ -14,16 +14,23 @@ import * as crypto from 'crypto';
 import { WastePriceEntity } from '../database/schemas/price.schema';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
 import { DropPointEntity } from '../database/schemas/drop-point.schema';
+import { PricingService } from '../pricing/pricing.service';
 
 import { getLlmModel, getEmbeddingModel } from './llm.factory';
 import { globalToolRegistry, ToolContext } from './tools/tool.registry';
 import { setWastePriceModel } from './tools/check-waste-price.tool';
 import { setSubmissionModel } from './tools/get-submission-status.tool';
 import { setDropPointModel } from './tools/find-drop-point.tool';
+import { setPricingService } from './tools/estimate-dynamic-price.tool';
+import { setPricingSubmissionModel } from './tools/explain-submission-pricing.tool';
+import { setQualityAssessmentSubmissionModel } from './tools/explain-quality-assessment.tool';
 
 // Side-effect imports: auto-register tools
 import './tools/navigate-website.tool';
 import './tools/check-waste-price.tool';
+import './tools/estimate-dynamic-price.tool';
+import './tools/explain-submission-pricing.tool';
+import './tools/explain-quality-assessment.tool';
 import './tools/get-submission-status.tool';
 import './tools/find-drop-point.tool';
 
@@ -47,6 +54,7 @@ export class ChatService implements OnModuleInit {
     private readonly submissionModel: Model<WasteSubmissionEntity>,
     @InjectModel(DropPointEntity.name)
     private readonly dropPointModel: Model<DropPointEntity>,
+    private readonly pricingService: PricingService,
   ) {
     const supabaseUrl = this.config.get<string>('SUPABASE_URL');
     const supabaseKey = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
@@ -72,6 +80,9 @@ export class ChatService implements OnModuleInit {
     setWastePriceModel(this.wastePriceModel);
     setSubmissionModel(this.submissionModel);
     setDropPointModel(this.dropPointModel);
+    setPricingService(this.pricingService);
+    setPricingSubmissionModel(this.submissionModel);
+    setQualityAssessmentSubmissionModel(this.submissionModel);
 
     this.logger.log(
       `Supabase: ${this.supabase ? 'connected' : 'NOT configured (RAG disabled)'}`,
@@ -276,6 +287,9 @@ ${memories}
 Rules:
 - If the user asks to navigate or open a page, use the 'navigate_website' tool.
 - If the user asks about waste prices, use the 'check_waste_price' tool.
+- If the user asks about estimasi cuan, dynamic pricing, kualitas limbah, grade limbah, or perkiraan harga, use the 'estimate_dynamic_price' tool.
+- If the user asks kenapa harga saya segini, kenapa cuan saya berubah, kenapa grade B, jelaskan harga setoran, or breakdown pricing, use the 'explain_submission_pricing' tool.
+- If the user asks about AI quality check, rekomendasi grade AI, tingkat kontaminasi, or why AI recommended a quality grade, use the 'explain_quality_assessment' tool.
 - If the user asks about their submission status, use the 'get_submission_status' tool.
 - If the user asks about drop-off locations, use the 'find_drop_point' tool.
 - Acknowledge their past history if relevant.`,

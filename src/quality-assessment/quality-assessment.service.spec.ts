@@ -1,0 +1,144 @@
+import { BadRequestException } from '@nestjs/common';
+import { QualityAssessmentService } from './quality-assessment.service';
+
+function queryResult<T>(value: T) {
+  return {
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockReturnThis(),
+    exec: jest.fn().mockResolvedValue(value),
+  };
+}
+
+describe('QualityAssessmentService', () => {
+  function createService(overrides?: {
+    submission?: Record<string, unknown> | null;
+    ragSource?: 'rag' | 'fallback_sop';
+  }) {
+    const submission =
+      overrides?.submission === null
+        ? null
+        : {
+            id: 'sub-1',
+            user_id: 'user-1',
+            waste_type: 'oil',
+            estimated_weight: 10,
+            image_url: 'https://example.com/oil.jpg',
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            ...overrides?.submission,
+          };
+    const updated = {
+      ...submission,
+      ai_quality_grade: 'B',
+    };
+    const submissionModel = {
+      findOne: jest.fn().mockReturnValue(queryResult(submission)),
+      findOneAndUpdate: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(updated),
+      }),
+    };
+    const qualityRagService = {
+      getQualityCriteria: jest.fn().mockResolvedValue({
+        source: overrides?.ragSource ?? 'fallback_sop',
+        criteriaText:
+          'Grade B: Agak keruh; ada sedikit endapan; tidak dominan bercampur air.',
+        criteria: [
+          'Grade B: Agak keruh; ada sedikit endapan; tidak dominan bercampur air.',
+        ],
+      }),
+    };
+    const config = {
+      get: jest.fn().mockReturnValue(undefined),
+    };
+    const service = new QualityAssessmentService(
+      submissionModel as any,
+      qualityRagService as any,
+      config as any,
+    );
+
+    return {
+      service,
+      submissionModel,
+      qualityRagService,
+    };
+  }
+
+  it('runs quality check with valid submission and description', async () => {
+    const { service } = createService();
+
+    const result = await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription:
+        'Minyak agak keruh, ada sedikit endapan, tidak terlihat bercampur air.',
+    });
+
+    expect(result.submissionId).toBe('sub-1');
+    expect(result.recommendedGrade).toBe('B');
+    expect(result.requiresAdminReview).toBe(true);
+    expect(result.ragSource).toBe('fallback_sop');
+  });
+
+  it('uses Supabase RAG result source when retrieval is available', async () => {
+    const { service } = createService({ ragSource: 'rag' });
+
+    const result = await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription:
+        'Minyak agak keruh, ada sedikit endapan, tidak terlihat bercampur air.',
+    });
+
+    expect(result.ragSource).toBe('rag');
+  });
+
+  it('falls back to local SOP when RAG service returns fallback source', async () => {
+    const { service } = createService({ ragSource: 'fallback_sop' });
+
+    const result = await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Kondisi agak keruh.',
+    });
+
+    expect(result.ragSource).toBe('fallback_sop');
+    expect(result.modelProvider).toBe('deterministic');
+  });
+
+  it('rejects quality check without description and without image_url', async () => {
+    const { service } = createService({
+      submission: {
+        image_url: undefined,
+      },
+    });
+
+    await expect(
+      service.analyzeSubmissionQuality({
+        submissionId: 'sub-1',
+        requestedBy: 'admin-1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('saves AI fields on the submission', async () => {
+    const { service, submissionModel } = createService({ ragSource: 'rag' });
+
+    await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Minyak sangat keruh dan banyak endapan.',
+    });
+
+    expect(submissionModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { id: 'sub-1' },
+      expect.objectContaining({
+        ai_quality_grade: 'C',
+        ai_quality_confidence: expect.any(Number),
+        ai_contamination_level: 'high',
+        ai_quality_source: 'rag',
+        ai_quality_rag_source: 'rag',
+      }),
+      { new: true },
+    );
+  });
+});
