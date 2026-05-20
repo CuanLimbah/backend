@@ -57,19 +57,26 @@ export class ChatController {
       (req.headers['x-user-id'] as string | undefined) ||
       'anonymous';
     let isAuthenticated = false;
+    let role: JwtPayload['role'] | undefined;
 
     try {
       const token = req.headers.authorization?.replace('Bearer ', '');
       if (token) {
         const payload = this.jwtService.verify<JwtPayload>(token);
         userId = payload.sub;
+        role = payload.role;
         isAuthenticated = true;
       }
     } catch {
       // Invalid/expired token — proceed as anonymous
     }
 
-    return this.chatService.handleMessage(userId, body.message, isAuthenticated);
+    return this.chatService.handleMessage(
+      userId,
+      body.message,
+      isAuthenticated,
+      role,
+    );
   }
 
   @Post('knowledge')
