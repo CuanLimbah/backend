@@ -61,6 +61,9 @@ describe('QualityAssessmentService', () => {
     const qualityVisionService = {
       analyzeWasteImage: jest.fn().mockResolvedValue(visualObservation),
       getModelVersion: jest.fn().mockReturnValue('openai:vision-quality-mvp-v1'),
+      getModelVersionForObservation: jest
+        .fn()
+        .mockReturnValue('openai:vision-quality-mvp-v1'),
       getSourceForObservation: jest.fn().mockReturnValue('vision_llm'),
     };
     const config = {
@@ -204,6 +207,67 @@ describe('QualityAssessmentService', () => {
 
     expect(result.submissionId).toBe('sub-1');
     expect(result.visualObservation).toBeDefined();
+  });
+
+  it('saves fallback visual model when QualityVisionService returns fallback observation', async () => {
+    const { service, submissionModel, qualityVisionService } = createService({
+      visualObservation: {
+        imageQuality: 'unclear',
+        isWasteVisible: false,
+        detectedWasteType: 'unknown',
+        sedimentLevel: 'unknown',
+        visualObservation:
+          'Analisis visual gagal dijalankan atau foto tidak dapat diakses. Admin perlu menilai foto secara manual.',
+        visionConfidence: 0.2,
+      },
+    });
+    qualityVisionService.getSourceForObservation.mockReturnValue('fallback');
+    qualityVisionService.getModelVersionForObservation.mockReturnValue(
+      'fallback:vision-quality-mvp-v1',
+    );
+
+    await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Minyak agak keruh.',
+    });
+
+    expect(submissionModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { id: 'sub-1' },
+      expect.objectContaining({
+        ai_visual_source: 'fallback',
+        ai_visual_model: 'fallback:vision-quality-mvp-v1',
+      }),
+      { new: true },
+    );
+  });
+
+  it('allows confidence above 0.55 for image-only clear useful observations', async () => {
+    const { service } = createService({
+      visualObservation: {
+        imageQuality: 'clear',
+        isWasteVisible: true,
+        detectedWasteType: 'oil',
+        color: 'coklat gelap',
+        clarity: 'agak keruh',
+        sedimentLevel: 'low',
+        waterVisible: false,
+        foodResidueVisible: true,
+        nonOrganicContaminationVisible: false,
+        containerCondition: 'botol tertutup',
+        visualObservation:
+          'Minyak terlihat agak keruh dengan sedikit endapan di bagian bawah.',
+        visionConfidence: 0.78,
+      },
+    });
+
+    const result = await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+    });
+
+    expect(result.recommendedGrade).toBe('B');
+    expect(result.confidence).toBeGreaterThan(0.55);
   });
 
   it('uses low confidence when condition description is vague', async () => {
