@@ -13,6 +13,7 @@ describe('QualityAssessmentService', () => {
   function createService(overrides?: {
     submission?: Record<string, unknown> | null;
     ragSource?: 'rag' | 'fallback_sop';
+    visualObservation?: Record<string, unknown>;
   }) {
     const submission =
       overrides?.submission === null
@@ -47,12 +48,28 @@ describe('QualityAssessmentService', () => {
         ],
       }),
     };
+    const visualObservation = {
+      imageQuality: 'clear',
+      isWasteVisible: true,
+      detectedWasteType: 'oil',
+      sedimentLevel: 'low',
+      visualObservation:
+        'Minyak terlihat agak keruh dengan sedikit endapan di bagian bawah.',
+      visionConfidence: 0.78,
+      ...overrides?.visualObservation,
+    };
+    const qualityVisionService = {
+      analyzeWasteImage: jest.fn().mockResolvedValue(visualObservation),
+      getModelVersion: jest.fn().mockReturnValue('openai:vision-quality-mvp-v1'),
+      getSourceForObservation: jest.fn().mockReturnValue('vision_llm'),
+    };
     const config = {
       get: jest.fn().mockReturnValue(undefined),
     };
     const service = new QualityAssessmentService(
       submissionModel as any,
       qualityRagService as any,
+      qualityVisionService as any,
       config as any,
     );
 
@@ -60,6 +77,7 @@ describe('QualityAssessmentService', () => {
       service,
       submissionModel,
       qualityRagService,
+      qualityVisionService,
     };
   }
 
@@ -149,13 +167,51 @@ describe('QualityAssessmentService', () => {
         ai_contamination_level: 'high',
         ai_quality_source: 'rag',
         ai_quality_rag_source: 'rag',
+        ai_visual_observations: expect.objectContaining({
+          imageQuality: 'clear',
+          detectedWasteType: 'oil',
+        }),
+        ai_visual_checked_at: expect.any(String),
+        ai_visual_model: 'openai:vision-quality-mvp-v1',
+        ai_visual_source: 'vision_llm',
       }),
       { new: true },
     );
   });
 
-  it('uses low confidence when condition description is vague', async () => {
+  it('calls QualityVisionService when image_url exists', async () => {
+    const { service, qualityVisionService } = createService();
+
+    await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Minyak agak keruh.',
+    });
+
+    expect(qualityVisionService.analyzeWasteImage).toHaveBeenCalledWith({
+      imageUrl: 'https://example.com/oil.jpg',
+      expectedWasteType: 'oil',
+    });
+  });
+
+  it('allows quality check with image_url when conditionDescription is omitted', async () => {
     const { service } = createService();
+
+    const result = await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+    });
+
+    expect(result.submissionId).toBe('sub-1');
+    expect(result.visualObservation).toBeDefined();
+  });
+
+  it('uses low confidence when condition description is vague', async () => {
+    const { service } = createService({
+      submission: {
+        image_url: undefined,
+      },
+    });
 
     const result = await service.analyzeSubmissionQuality({
       submissionId: 'sub-1',
@@ -165,6 +221,46 @@ describe('QualityAssessmentService', () => {
 
     expect(result.confidence).toBeLessThanOrEqual(0.55);
     expect(result.requiresAdminReview).toBe(true);
+  });
+
+  it('caps confidence when visual observation is unclear', async () => {
+    const { service } = createService({
+      visualObservation: {
+        imageQuality: 'unclear',
+        isWasteVisible: true,
+        detectedWasteType: 'oil',
+        visualObservation: 'Foto kurang jelas, detail limbah sulit dinilai.',
+        visionConfidence: 0.35,
+      },
+    });
+
+    const result = await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Minyak agak keruh dengan sedikit endapan.',
+    });
+
+    expect(result.confidence).toBeLessThanOrEqual(0.55);
+  });
+
+  it('caps confidence when detected waste type mismatches submission waste type', async () => {
+    const { service } = createService({
+      visualObservation: {
+        imageQuality: 'clear',
+        isWasteVisible: true,
+        detectedWasteType: 'food',
+        visualObservation: 'Foto terlihat seperti sisa makanan, bukan minyak.',
+        visionConfidence: 0.82,
+      },
+    });
+
+    const result = await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Minyak agak keruh dengan sedikit endapan.',
+    });
+
+    expect(result.confidence).toBeLessThanOrEqual(0.45);
   });
 
   it('recommends grade C when description mentions many sediments or mixed water', async () => {

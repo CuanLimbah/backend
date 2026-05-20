@@ -3,11 +3,12 @@ import { AuthModule } from '../auth/auth.module';
 import { QualityAssessmentController } from './quality-assessment.controller';
 import { QualityAssessmentService } from './quality-assessment.service';
 import { QualityRagService } from './quality-rag.service';
+import { QualityVisionService } from './quality-vision.service';
 
 @Module({
   imports: [AuthModule],
   controllers: [QualityAssessmentController],
-  providers: [QualityAssessmentService, QualityRagService],
-  exports: [QualityAssessmentService, QualityRagService],
+  providers: [QualityAssessmentService, QualityRagService, QualityVisionService],
+  exports: [QualityAssessmentService, QualityRagService, QualityVisionService],
 })
 export class QualityAssessmentModule {}

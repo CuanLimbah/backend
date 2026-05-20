@@ -4,10 +4,15 @@ import { InjectModel } from '@nestjs/mongoose';
 import { generateText } from 'ai';
 import { Model } from 'mongoose';
 import { z } from 'zod';
-import type { ContaminationLevel, QualityGrade } from '../common/models';
+import type {
+  AiVisualObservations,
+  ContaminationLevel,
+  QualityGrade,
+} from '../common/models';
 import { getLlmModel } from '../chat/llm.factory';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
 import { QualityRagService } from './quality-rag.service';
+import { QualityVisionService } from './quality-vision.service';
 import type {
   InternalQualityAssessmentResult,
   QualityAssessmentInput,
@@ -30,6 +35,7 @@ export class QualityAssessmentService {
     @InjectModel(WasteSubmissionEntity.name)
     private readonly submissionModel: Model<WasteSubmissionEntity>,
     private readonly qualityRagService: QualityRagService,
+    private readonly qualityVisionService: QualityVisionService,
     private readonly config: ConfigService,
   ) {}
 
@@ -56,15 +62,26 @@ export class QualityAssessmentService {
       );
     }
 
+    const visualObservation = submission.image_url
+      ? await this.qualityVisionService.analyzeWasteImage({
+          imageUrl: submission.image_url,
+          expectedWasteType: submission.waste_type,
+        })
+      : undefined;
+    const ragContext = this.buildRagContext(
+      conditionDescription,
+      visualObservation,
+    );
     const criteria = await this.qualityRagService.getQualityCriteria({
       wasteType: submission.waste_type,
-      conditionDescription,
+      conditionDescription: ragContext,
     });
 
     const assessment =
       (await this.tryAssessWithLlm({
         submission,
         conditionDescription,
+        visualObservation,
         criteriaText: criteria.criteriaText,
         criteria: criteria.criteria,
         ragSource: criteria.source,
@@ -73,6 +90,7 @@ export class QualityAssessmentService {
         submissionId: submission.id,
         wasteType: submission.waste_type,
         conditionDescription,
+        visualObservation,
         criteria: criteria.criteria,
         ragSource: criteria.source,
       });
@@ -93,6 +111,17 @@ export class QualityAssessmentService {
           ai_quality_model: assessment.modelVersion,
           ai_quality_source: assessment.qualitySource,
           ai_quality_rag_source: assessment.ragSource,
+          ...(visualObservation
+            ? {
+                ai_visual_observations: visualObservation,
+                ai_visual_checked_at: checkedAt,
+                ai_visual_model: this.qualityVisionService.getModelVersion(),
+                ai_visual_source:
+                  this.qualityVisionService.getSourceForObservation(
+                    visualObservation,
+                  ),
+              }
+            : {}),
         },
         { new: true },
       )
@@ -105,6 +134,7 @@ export class QualityAssessmentService {
   private async tryAssessWithLlm(input: {
     submission: WasteSubmissionEntity;
     conditionDescription?: string;
+    visualObservation?: AiVisualObservations;
     criteriaText: string;
     criteria: string[];
     ragSource: 'rag' | 'fallback_sop';
@@ -122,8 +152,8 @@ export class QualityAssessmentService {
 Assess waste quality using:
 1. Waste type
 2. Admin condition description
-3. SOP grading criteria retrieved from Supabase RAG or fallback SOP
-4. Existing image_url only as metadata reference, not as visual proof because vision model is not implemented yet
+3. Visual observations from QualityVisionService if available
+4. SOP grading criteria retrieved from Supabase RAG or fallback SOP
 
 Return valid JSON only:
 {
@@ -138,14 +168,19 @@ Return valid JSON only:
 
 Guardrails:
 - If conditionDescription is vague, use confidence <= 0.55.
+- If visual observation is unclear, blurry, invalid, or confidence <= 0.45, the final quality confidence must be <= 0.55.
+- If vision and admin description conflict, lower confidence and mention that admin must review manually.
+- If image detectedWasteType mismatches submission.waste_type, lower confidence and warn admin.
 - If conditionDescription mentions mixed water, many sediments, plastic, metal, glass, dangerous contamination, or severe rotting, recommend C.
 - If conditionDescription indicates clean, separated, closed container, no water, and very little sediment, recommend A or B depending on detail.
 - Never claim exact lab results.
+- Never auto-approve.
 - Never decide final payout.`,
         prompt: JSON.stringify({
           wasteType: input.submission.waste_type,
           conditionDescription:
             input.conditionDescription || '(tidak ada deskripsi kondisi)',
+          visualObservation: input.visualObservation ?? null,
           imageUrlAvailable: Boolean(input.submission.image_url),
           sopCriteria: input.criteriaText,
         }),
@@ -159,7 +194,11 @@ Guardrails:
         submissionId: input.submission.id,
         wasteType: input.submission.waste_type,
         recommendedGrade: parsed.recommendedGrade,
-        confidence: this.clampConfidence(parsed.confidence),
+        confidence: this.applyVisualConfidenceCaps(
+          this.clampConfidence(parsed.confidence),
+          input.submission.waste_type,
+          input.visualObservation,
+        ),
         contaminationLevel: parsed.contaminationLevel,
         reason: parsed.reason,
         matchedCriteria: parsed.matchedCriteria,
@@ -168,6 +207,7 @@ Guardrails:
         modelProvider: provider,
         modelVersion: `${provider}:quality-assessment-mvp-v1`,
         ragSource: input.ragSource,
+        visualObservation: input.visualObservation,
         qualitySource: 'llm',
       };
     } catch {
@@ -179,10 +219,20 @@ Guardrails:
     submissionId: string;
     wasteType: 'food' | 'oil';
     conditionDescription?: string;
+    visualObservation?: AiVisualObservations;
     criteria: string[];
     ragSource: 'rag' | 'fallback_sop';
   }): InternalQualityAssessmentResult {
-    const description = (input.conditionDescription || '').toLowerCase();
+    const description = [
+      input.conditionDescription,
+      input.visualObservation?.visualObservation,
+      input.visualObservation?.clarity,
+      input.visualObservation?.containerCondition,
+      input.visualObservation?.color,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
     const isVague = description.trim().length < 12;
     const cKeywords = [
       'banyak endapan',
@@ -194,6 +244,10 @@ Guardrails:
       'sangat keruh',
       'sangat basah',
       'tercampur',
+      'air terlihat',
+      'kontaminasi tinggi',
+      'high contamination',
+      'kemasan',
     ];
     const aKeywords = [
       'bersih',
@@ -221,6 +275,9 @@ Guardrails:
 
     if (
       mentionsMixedWater ||
+      input.visualObservation?.waterVisible === true ||
+      input.visualObservation?.sedimentLevel === 'high' ||
+      input.visualObservation?.nonOrganicContaminationVisible === true ||
       cKeywords.some((keyword) => description.includes(keyword))
     ) {
       recommendedGrade = 'C';
@@ -241,8 +298,18 @@ Guardrails:
       contaminationLevel = 'medium';
     }
 
+    confidence = this.applyVisualConfidenceCaps(
+      confidence,
+      input.wasteType,
+      input.visualObservation,
+    );
+
     const reason = isVague
       ? 'Deskripsi kondisi masih terbatas, sehingga admin perlu inspeksi manual sebelum menentukan grade final.'
+      : input.visualObservation?.detectedWasteType !== undefined &&
+          input.visualObservation.detectedWasteType !== 'unknown' &&
+          input.visualObservation.detectedWasteType !== input.wasteType
+        ? `Rekomendasi grade ${recommendedGrade} memiliki confidence rendah karena jenis limbah pada foto tidak sepenuhnya cocok dengan data submission.`
       : `Rekomendasi grade ${recommendedGrade} dibuat berdasarkan kecocokan deskripsi kondisi dengan SOP kualitas.`;
 
     return {
@@ -261,8 +328,67 @@ Guardrails:
       modelProvider: 'deterministic',
       modelVersion: 'deterministic:quality-assessment-mvp-v1',
       ragSource: input.ragSource,
+      visualObservation: input.visualObservation,
       qualitySource: input.ragSource,
     };
+  }
+
+  private buildRagContext(
+    conditionDescription?: string,
+    visualObservation?: AiVisualObservations,
+  ): string | undefined {
+    return [
+      conditionDescription,
+      visualObservation?.visualObservation,
+      visualObservation?.clarity
+        ? `Kejernihan: ${visualObservation.clarity}`
+        : undefined,
+      visualObservation?.sedimentLevel
+        ? `Endapan: ${visualObservation.sedimentLevel}`
+        : undefined,
+      visualObservation?.waterVisible != null
+        ? `Air terlihat: ${visualObservation.waterVisible ? 'ya' : 'tidak'}`
+        : undefined,
+      visualObservation?.nonOrganicContaminationVisible != null
+        ? `Kontaminasi non-organik: ${
+            visualObservation.nonOrganicContaminationVisible ? 'ya' : 'tidak'
+          }`
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+
+  private applyVisualConfidenceCaps(
+    confidence: number,
+    expectedWasteType: 'food' | 'oil',
+    visualObservation?: AiVisualObservations,
+  ): number {
+    if (!visualObservation) {
+      return this.clampConfidence(confidence);
+    }
+
+    let cappedConfidence = confidence;
+
+    if (
+      visualObservation.imageQuality !== 'clear' ||
+      visualObservation.visionConfidence <= 0.45
+    ) {
+      cappedConfidence = Math.min(cappedConfidence, 0.55);
+    }
+
+    if (!visualObservation.isWasteVisible) {
+      cappedConfidence = Math.min(cappedConfidence, 0.4);
+    }
+
+    if (
+      visualObservation.detectedWasteType !== 'unknown' &&
+      visualObservation.detectedWasteType !== expectedWasteType
+    ) {
+      cappedConfidence = Math.min(cappedConfidence, 0.45);
+    }
+
+    return this.clampConfidence(cappedConfidence);
   }
 
   private extractJsonObject(text: string): string {

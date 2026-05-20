@@ -1,9 +1,14 @@
 import type {
   ContaminationLevel,
+  AiVisualObservations,
+  ImageQuality,
   QualityAssessmentSource,
   QualityGrade,
+  SedimentLevel,
   WasteType,
 } from '../common/models';
+
+export type { AiVisualObservations, ImageQuality, SedimentLevel };
 
 export interface QualityCriteriaInput {
   wasteType: WasteType;
@@ -42,6 +47,7 @@ export interface QualityAssessmentResult {
   modelProvider: string;
   modelVersion: string;
   ragSource: 'rag' | 'fallback_sop';
+  visualObservation?: AiVisualObservations;
 }
 
 export interface InternalQualityAssessmentResult extends QualityAssessmentResult {

@@ -12,6 +12,27 @@ export type QualityGradeSource = 'ai' | 'admin';
 
 export type QualityAssessmentSource = 'rag' | 'fallback_sop' | 'llm';
 
+export type ImageQuality = 'clear' | 'blurry' | 'dark' | 'unclear' | 'invalid';
+
+export type SedimentLevel = 'none' | 'low' | 'medium' | 'high' | 'unknown';
+
+export type VisionAssessmentSource = 'vision_llm' | 'fallback';
+
+export interface AiVisualObservations {
+  imageQuality: ImageQuality;
+  isWasteVisible: boolean;
+  detectedWasteType: WasteType | 'unknown';
+  color?: string;
+  clarity?: string;
+  sedimentLevel?: SedimentLevel;
+  waterVisible?: boolean;
+  foodResidueVisible?: boolean;
+  nonOrganicContaminationVisible?: boolean;
+  containerCondition?: string;
+  visualObservation: string;
+  visionConfidence: number;
+}
+
 export type SubmissionStatus = 'pending' | 'verified' | 'completed' | 'rejected';
 
 export type TransactionType = 'deposit' | 'withdrawal';
@@ -76,6 +97,10 @@ export interface WasteSubmission {
   ai_quality_model?: string;
   ai_quality_source?: QualityAssessmentSource;
   ai_quality_rag_source?: 'rag' | 'fallback_sop';
+  ai_visual_observations?: AiVisualObservations;
+  ai_visual_checked_at?: string;
+  ai_visual_model?: string;
+  ai_visual_source?: VisionAssessmentSource;
   quality_grade_source?: QualityGradeSource;
   admin_quality_notes?: string;
 }
