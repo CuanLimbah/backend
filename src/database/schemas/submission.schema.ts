@@ -1,9 +1,11 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import type {
   ContaminationLevel,
+  AiVisualObservations,
   QualityAssessmentSource,
   QualityGrade,
   QualityGradeSource,
+  VisionAssessmentSource,
   WasteSubmission,
 } from '../../common/models';
 
@@ -110,6 +112,21 @@ export class WasteSubmissionEntity implements WasteSubmission {
 
   @Prop({ type: String, enum: ['rag', 'fallback_sop'] })
   ai_quality_rag_source?: 'rag' | 'fallback_sop';
+
+  @Prop({ type: Object })
+  ai_visual_observations?: AiVisualObservations;
+
+  @Prop()
+  ai_visual_checked_at?: string;
+
+  @Prop()
+  ai_visual_model?: string;
+
+  @Prop({
+    type: String,
+    enum: ['vision_llm', 'fallback'] satisfies VisionAssessmentSource[],
+  })
+  ai_visual_source?: VisionAssessmentSource;
 
   @Prop({ type: String, enum: ['ai', 'admin'] satisfies QualityGradeSource[] })
   quality_grade_source?: QualityGradeSource;
