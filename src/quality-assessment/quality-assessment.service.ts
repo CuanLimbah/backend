@@ -115,7 +115,10 @@ export class QualityAssessmentService {
             ? {
                 ai_visual_observations: visualObservation,
                 ai_visual_checked_at: checkedAt,
-                ai_visual_model: this.qualityVisionService.getModelVersion(),
+                ai_visual_model:
+                  this.qualityVisionService.getModelVersionForObservation(
+                    visualObservation,
+                  ),
                 ai_visual_source:
                   this.qualityVisionService.getSourceForObservation(
                     visualObservation,
@@ -167,9 +170,11 @@ Return valid JSON only:
 }
 
 Guardrails:
-- If conditionDescription is vague, use confidence <= 0.55.
+- If conditionDescription is vague or missing AND visual observation is also missing, unclear, blurry, invalid, low-confidence, or waste is not visible, use confidence <= 0.55.
+- If conditionDescription is missing but visual observation is clear, waste is visible, detectedWasteType matches submission waste type, and SOP match is strong, confidence may be higher.
+- If visual observation and admin conditionDescription conflict, lower confidence and explain that admin must review manually.
 - If visual observation is unclear, blurry, invalid, or confidence <= 0.45, the final quality confidence must be <= 0.55.
-- If vision and admin description conflict, lower confidence and mention that admin must review manually.
+- If waste is not visible, final quality confidence must be <= 0.4.
 - If image detectedWasteType mismatches submission.waste_type, lower confidence and warn admin.
 - If conditionDescription mentions mixed water, many sediments, plastic, metal, glass, dangerous contamination, or severe rotting, recommend C.
 - If conditionDescription indicates clean, separated, closed container, no water, and very little sediment, recommend A or B depending on detail.
@@ -229,6 +234,26 @@ Guardrails:
       input.visualObservation?.clarity,
       input.visualObservation?.containerCondition,
       input.visualObservation?.color,
+      input.visualObservation?.sedimentLevel
+        ? `endapan ${input.visualObservation.sedimentLevel}`
+        : undefined,
+      input.visualObservation?.waterVisible != null
+        ? `air ${input.visualObservation.waterVisible ? 'terlihat' : 'tidak terlihat'}`
+        : undefined,
+      input.visualObservation?.foodResidueVisible != null
+        ? `sisa makanan ${
+            input.visualObservation.foodResidueVisible
+              ? 'terlihat'
+              : 'tidak terlihat'
+          }`
+        : undefined,
+      input.visualObservation?.nonOrganicContaminationVisible != null
+        ? `kontaminasi non-organik ${
+            input.visualObservation.nonOrganicContaminationVisible
+              ? 'terlihat'
+              : 'tidak terlihat'
+          }`
+        : undefined,
     ]
       .filter(Boolean)
       .join(' ')

@@ -122,6 +122,14 @@ Guardrails:
       : 'fallback:vision-quality-mvp-v1';
   }
 
+  getModelVersionForObservation(observation: AiVisualObservations): string {
+    if (this.getSourceForObservation(observation) === 'fallback') {
+      return 'fallback:vision-quality-mvp-v1';
+    }
+
+    return `${this.getProvider()}:vision-quality-mvp-v1`;
+  }
+
   getSourceForObservation(observation: AiVisualObservations): 'vision_llm' | 'fallback' {
     return this.isFallbackObservation(observation)
       ? 'fallback'

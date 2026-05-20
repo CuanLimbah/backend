@@ -157,4 +157,40 @@ describe('QualityVisionService', () => {
 
     expect(result).not.toHaveProperty('recommendedGrade');
   });
+
+  it('returns fallback model version when observation source is fallback', () => {
+    const service = new QualityVisionService(
+      createConfig({
+        LLM_PROVIDER: 'openai',
+        OPENAI_API_KEY: 'openai-key',
+      }) as any,
+    );
+
+    const observation = service.getFallbackObservation(
+      'Analisis visual gagal dijalankan atau foto tidak dapat diakses. Admin perlu menilai foto secara manual.',
+    );
+
+    expect(service.getModelVersionForObservation(observation)).toBe(
+      'fallback:vision-quality-mvp-v1',
+    );
+  });
+
+  it('returns provider model version when observation source is vision_llm', () => {
+    const service = new QualityVisionService(
+      createConfig({
+        LLM_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'gemini-key',
+      }) as any,
+    );
+
+    expect(
+      service.getModelVersionForObservation({
+        imageQuality: 'clear',
+        isWasteVisible: true,
+        detectedWasteType: 'oil',
+        visualObservation: 'Minyak terlihat agak keruh.',
+        visionConfidence: 0.78,
+      }),
+    ).toBe('gemini:vision-quality-mvp-v1');
+  });
 });
