@@ -15,6 +15,7 @@ import { WastePriceEntity } from '../database/schemas/price.schema';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
 import { DropPointEntity } from '../database/schemas/drop-point.schema';
 import { PricingService } from '../pricing/pricing.service';
+import type { UserRole } from '../common/models';
 
 import { getLlmModel, getEmbeddingModel } from './llm.factory';
 import { globalToolRegistry, ToolContext } from './tools/tool.registry';
@@ -220,6 +221,7 @@ export class ChatService implements OnModuleInit {
     userId: string,
     message: string,
     isAuthenticated: boolean,
+    role?: UserRole,
   ) {
     let facts = 'No relevant facts found.';
     let memories = 'No past context found.';
@@ -266,7 +268,7 @@ export class ChatService implements OnModuleInit {
       }
     }
 
-    const toolContext: ToolContext = { userId, isAuthenticated };
+    const toolContext: ToolContext = { userId, isAuthenticated, role };
 
     const { text, toolCalls } = await generateText({
       model: getLlmModel(this.config),
@@ -289,7 +291,7 @@ Rules:
 - If the user asks about waste prices, use the 'check_waste_price' tool.
 - If the user asks about estimasi cuan, dynamic pricing, kualitas limbah, grade limbah, or perkiraan harga, use the 'estimate_dynamic_price' tool.
 - If the user asks kenapa harga saya segini, kenapa cuan saya berubah, kenapa grade B, jelaskan harga setoran, or breakdown pricing, use the 'explain_submission_pricing' tool.
-- If the user asks about AI quality check, rekomendasi grade AI, tingkat kontaminasi, or why AI recommended a quality grade, use the 'explain_quality_assessment' tool.
+- If the user asks about AI quality check, rekomendasi grade AI, tingkat kontaminasi, why AI recommended a quality grade, why confidence is low, what AI saw from the photo, how AI quality affects pricing, or whether final price used AI recommendation or admin grade, use the 'explain_quality_assessment' tool.
 - If the user asks about their submission status, use the 'get_submission_status' tool.
 - If the user asks about drop-off locations, use the 'find_drop_point' tool.
 - Acknowledge their past history if relevant.`,
