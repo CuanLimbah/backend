@@ -6,6 +6,7 @@ import type {
   QualityAiAnalytics,
   QualityAuditEventType,
   QualityAuditLog,
+  QualityFeedbackTag,
   QualityGrade,
   WasteSubmission,
   WasteType,
@@ -16,6 +17,12 @@ type AnalyticsFilters = {
   startDate?: string;
   endDate?: string;
   wasteType?: WasteType;
+};
+
+const gradeRank: Record<QualityGrade, number> = {
+  A: 3,
+  B: 2,
+  C: 1,
 };
 
 @Injectable()
@@ -47,6 +54,7 @@ export class QualityAuditLogService {
     adminId?: string,
   ): Promise<void> {
     const isOverridden = this.isSubmissionOverridden(submission);
+    const aiErrorPattern = this.classifyAiErrorPattern(submission, isOverridden);
 
     await this.qualityAuditLogModel.create({
       id: `qal-${randomUUID()}`,
@@ -68,6 +76,14 @@ export class QualityAuditLogService {
       quality_grade_source: submission.quality_grade_source,
       admin_quality_notes: submission.admin_quality_notes,
       admin_id: adminId,
+      quality_feedback: submission.quality_feedback,
+      override_reason_tags: submission.override_reason_tags,
+      override_primary_reason: submission.override_primary_reason,
+      override_feedback_severity: submission.override_feedback_severity,
+      ai_error_pattern: aiErrorPattern,
+      rag_improvement_suggestion: this.getRagImprovementSuggestion(submission),
+      vision_improvement_suggestion:
+        this.getVisionImprovementSuggestion(submission),
       is_overridden: isOverridden,
       override_from: isOverridden ? submission.ai_quality_grade : undefined,
       override_to: isOverridden ? submission.quality_grade : undefined,
@@ -102,8 +118,11 @@ export class QualityAuditLogService {
     const adminLogs = logs.filter((log) =>
       ['admin_verified', 'admin_overridden'].includes(log.event_type),
     );
-    const overriddenLogs = adminLogs.filter((log) => log.is_overridden);
-    const aiAcceptedCount = adminLogs.length - overriddenLogs.length;
+    const comparableAdminLogs = adminLogs.filter(
+      (log) => log.ai_quality_grade && log.final_quality_grade,
+    );
+    const overriddenLogs = comparableAdminLogs.filter((log) => log.is_overridden);
+    const aiAcceptedCount = comparableAdminLogs.length - overriddenLogs.length;
     const confidenceValues = aiLogs
       .map((log) => log.ai_quality_confidence)
       .filter((value): value is number => typeof value === 'number');
@@ -113,8 +132,8 @@ export class QualityAuditLogService {
       totalAdminDecisions: adminLogs.length,
       aiAcceptedCount,
       adminOverrideCount: overriddenLogs.length,
-      overrideRate: this.safeRatio(overriddenLogs.length, adminLogs.length),
-      agreementRate: this.safeRatio(aiAcceptedCount, adminLogs.length),
+      overrideRate: this.safeRatio(overriddenLogs.length, comparableAdminLogs.length),
+      agreementRate: this.safeRatio(aiAcceptedCount, comparableAdminLogs.length),
       averageConfidence: confidenceValues.length
         ? this.roundMetric(
             confidenceValues.reduce((sum, value) => sum + value, 0) /
@@ -141,6 +160,9 @@ export class QualityAuditLogService {
         admin: this.countGrades(adminLogs, 'final_quality_grade'),
       },
       overrideMatrix: this.buildOverrideMatrix(overriddenLogs),
+      feedbackTagCounts: this.countFeedbackTags(adminLogs),
+      primaryOverrideReasons: this.countPrimaryOverrideReasons(overriddenLogs),
+      aiErrorPatterns: this.countAiErrorPatterns(overriddenLogs),
       byWasteType: {
         food: this.buildWasteTypeAnalytics(logs, 'food'),
         oil: this.buildWasteTypeAnalytics(logs, 'oil'),
@@ -167,6 +189,82 @@ export class QualityAuditLogService {
         submission.quality_grade &&
         submission.ai_quality_grade !== submission.quality_grade,
     );
+  }
+
+  private classifyAiErrorPattern(
+    submission: WasteSubmission,
+    isOverridden: boolean,
+  ): string | undefined {
+    if (!isOverridden) return undefined;
+
+    if (submission.override_primary_reason) {
+      return submission.override_primary_reason;
+    }
+
+    if (submission.ai_visual_source === 'fallback') {
+      return 'vision_fallback_used';
+    }
+
+    if (submission.ai_quality_rag_source === 'fallback_sop') {
+      return 'fallback_sop_used';
+    }
+
+    if (
+      typeof submission.ai_quality_confidence === 'number' &&
+      submission.ai_quality_confidence < 0.5
+    ) {
+      return 'low_confidence_case';
+    }
+
+    if (submission.ai_quality_grade && submission.quality_grade) {
+      const aiRank = gradeRank[submission.ai_quality_grade];
+      const finalRank = gradeRank[submission.quality_grade];
+
+      if (aiRank > finalRank) return 'ai_too_optimistic';
+      if (aiRank < finalRank) return 'ai_too_conservative';
+    }
+
+    return 'other';
+  }
+
+  private getRagImprovementSuggestion(
+    submission: WasteSubmission,
+  ): string | undefined {
+    const tags = submission.override_reason_tags ?? [];
+
+    if (
+      submission.ai_quality_rag_source === 'fallback_sop' ||
+      tags.includes('sop_mismatch') ||
+      tags.includes('rag_context_insufficient')
+    ) {
+      return 'Periksa dokumen SOP di Supabase RAG dan kualitas retrieval.';
+    }
+
+    return undefined;
+  }
+
+  private getVisionImprovementSuggestion(
+    submission: WasteSubmission,
+  ): string | undefined {
+    const tags = submission.override_reason_tags ?? [];
+    const visualIssueTags: QualityFeedbackTag[] = [
+      'photo_unclear',
+      'visual_missed_sediment',
+      'visual_missed_water',
+      'visual_missed_food_residue',
+      'visual_missed_non_organic_contamination',
+      'wrong_waste_type_detected',
+      'vision_fallback_used',
+    ];
+
+    if (
+      submission.ai_visual_source === 'fallback' ||
+      visualIssueTags.some((tag) => tags.includes(tag))
+    ) {
+      return 'Periksa kualitas foto, provider vision, dan prompt observasi visual.';
+    }
+
+    return undefined;
   }
 
   private safeRatio(numerator: number, denominator: number): number {
@@ -204,6 +302,33 @@ export class QualityAuditLogService {
       },
       { A: 0, B: 0, C: 0 } satisfies Record<QualityGrade, number>,
     );
+  }
+
+  private countFeedbackTags(logs: QualityAuditLog[]): Record<string, number> {
+    return logs.reduce<Record<string, number>>((counts, log) => {
+      for (const tag of log.override_reason_tags ?? []) {
+        counts[tag] = (counts[tag] ?? 0) + 1;
+      }
+      return counts;
+    }, {});
+  }
+
+  private countPrimaryOverrideReasons(
+    logs: QualityAuditLog[],
+  ): Record<string, number> {
+    return logs.reduce<Record<string, number>>((counts, log) => {
+      const reason = log.override_primary_reason ?? 'unknown';
+      counts[reason] = (counts[reason] ?? 0) + 1;
+      return counts;
+    }, {});
+  }
+
+  private countAiErrorPatterns(logs: QualityAuditLog[]): Record<string, number> {
+    return logs.reduce<Record<string, number>>((counts, log) => {
+      const pattern = log.ai_error_pattern ?? 'unknown';
+      counts[pattern] = (counts[pattern] ?? 0) + 1;
+      return counts;
+    }, {});
   }
 
   private buildOverrideMatrix(logs: QualityAuditLog[]): Record<string, number> {

@@ -9,6 +9,12 @@ import { AgentTool, ToolContext, globalToolRegistry } from './tool.registry';
 
 let qualityAuditLogService: QualityAuditLogService | null = null;
 
+const gradeRank: Record<QualityGrade, number> = {
+  A: 3,
+  B: 2,
+  C: 1,
+};
+
 export function setQualityAuditLogService(service: QualityAuditLogService) {
   qualityAuditLogService = service;
 }
@@ -55,11 +61,21 @@ function formatOverrideMatrix(matrix: Record<string, number>): string {
 }
 
 function describeOverrideTransition(transition: string): string {
-  const [from, to] = transition.split('->');
-  if (!from || !to) return 'pola override tercatat';
-  return from < to
-    ? 'admin sering menaikkan grade dari rekomendasi AI'
-    : 'admin sering menurunkan grade dari rekomendasi AI';
+  const [from, to] = transition.split('->') as [QualityGrade, QualityGrade];
+
+  if (!gradeRank[from] || !gradeRank[to]) {
+    return 'pola override tercatat';
+  }
+
+  if (gradeRank[to] > gradeRank[from]) {
+    return 'admin menaikkan grade dari rekomendasi AI';
+  }
+
+  if (gradeRank[to] < gradeRank[from]) {
+    return 'admin menurunkan grade dari rekomendasi AI';
+  }
+
+  return 'grade final sama dengan rekomendasi AI';
 }
 
 function getAgreementInterpretation(agreementRate: number): string {
@@ -179,6 +195,53 @@ function formatRecentOverrides(
     .join('\n');
 }
 
+function formatCounts(
+  counts: Record<string, number> | undefined,
+  emptyMessage: string,
+): string {
+  const rows = Object.entries(counts ?? {})
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  if (rows.length === 0) return emptyMessage;
+
+  return rows
+    .map(([key, count]) => `- ${key}: ${formatNumber(count)}`)
+    .join('\n');
+}
+
+function hasFeedbackData(analytics: QualityAiAnalytics): boolean {
+  return [
+    analytics.feedbackTagCounts,
+    analytics.primaryOverrideReasons,
+    analytics.aiErrorPatterns,
+  ].some((counts) => Object.values(counts ?? {}).some((count) => count > 0));
+}
+
+function formatFeedbackPatterns(analytics: QualityAiAnalytics): string {
+  if (!hasFeedbackData(analytics)) {
+    return 'Belum ada feedback terstruktur dari admin.';
+  }
+
+  return [
+    'Feedback tags:',
+    formatCounts(
+      analytics.feedbackTagCounts,
+      '- Belum ada feedback tag tersimpan.',
+    ),
+    'Primary override reasons:',
+    formatCounts(
+      analytics.primaryOverrideReasons,
+      '- Belum ada primary reason tersimpan.',
+    ),
+    'AI error patterns:',
+    formatCounts(
+      analytics.aiErrorPatterns,
+      '- Belum ada AI error pattern tersimpan.',
+    ),
+  ].join('\n');
+}
+
 function getActionRecommendations(analytics: QualityAiAnalytics): string {
   const recommendations: string[] = [];
 
@@ -205,6 +268,33 @@ function getActionRecommendations(analytics: QualityAiAnalytics): string {
     recommendations.push(
       '- AI sudah cukup membantu, tetapi admin tetap perlu validasi akhir.',
     );
+  }
+  if ((analytics.aiErrorPatterns.ai_too_optimistic ?? 0) > 0) {
+    recommendations.push(
+      '- AI cenderung terlalu optimistis. Pertimbangkan memperketat prompt grading dan SOP Grade A/B.',
+    );
+  }
+  if ((analytics.aiErrorPatterns.ai_too_conservative ?? 0) > 0) {
+    recommendations.push(
+      '- AI cenderung terlalu konservatif. Pertimbangkan mengevaluasi threshold kontaminasi.',
+    );
+  }
+  if (
+    (analytics.feedbackTagCounts.visual_missed_sediment ?? 0) > 0 ||
+    (analytics.feedbackTagCounts.visual_missed_water ?? 0) > 0
+  ) {
+    recommendations.push(
+      '- Perkuat prompt vision untuk memperhatikan endapan dan campuran air.',
+    );
+  }
+  if (
+    (analytics.feedbackTagCounts.sop_mismatch ?? 0) > 0 ||
+    (analytics.feedbackTagCounts.rag_context_insufficient ?? 0) > 0
+  ) {
+    recommendations.push('- Perbaiki dokumen SOP dan retrieval Supabase RAG.');
+  }
+  if ((analytics.feedbackTagCounts.photo_unclear ?? 0) > 0) {
+    recommendations.push('- Tambahkan panduan upload foto untuk user.');
   }
 
   return recommendations.length
@@ -265,6 +355,9 @@ function buildExplanation(
     '',
     'POLA OVERRIDE GRADE',
     formatOverrideMatrix(analytics.overrideMatrix),
+    '',
+    'POLA FEEDBACK ADMIN',
+    formatFeedbackPatterns(analytics),
     '',
     'RECENT OVERRIDES',
     formatRecentOverrides(analytics.recentOverrides),

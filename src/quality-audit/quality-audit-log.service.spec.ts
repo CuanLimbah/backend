@@ -34,6 +34,17 @@ const baseSubmission = {
   quality_grade: 'B',
   quality_grade_source: 'ai',
   admin_quality_notes: 'Sesuai rekomendasi AI.',
+  quality_feedback: {
+    tags: ['admin_manual_inspection'],
+    primaryReason: 'admin_manual_inspection',
+    severity: 'low',
+    note: 'Sesuai rekomendasi AI.',
+    created_at: '2026-05-21T01:00:00.000Z',
+    created_by: 'admin-1',
+  },
+  override_reason_tags: ['admin_manual_inspection'],
+  override_primary_reason: 'admin_manual_inspection',
+  override_feedback_severity: 'low',
   price_snapshot_per_kg: 3000,
   final_price_per_kg: 2550,
   earnings: 25500,
@@ -95,6 +106,12 @@ describe('QualityAuditLogService', () => {
         event_type: 'admin_verified',
         final_quality_grade: 'B',
         admin_id: 'admin-1',
+        quality_feedback: expect.objectContaining({
+          primaryReason: 'admin_manual_inspection',
+        }),
+        override_reason_tags: ['admin_manual_inspection'],
+        override_primary_reason: 'admin_manual_inspection',
+        override_feedback_severity: 'low',
         is_overridden: false,
       }),
     );
@@ -123,6 +140,59 @@ describe('QualityAuditLogService', () => {
     );
   });
 
+  it('classifies AI error pattern from override primary reason when available', async () => {
+    const { service, model } = createService();
+
+    await service.logAdminQualityDecision({
+      submission: {
+        ...baseSubmission,
+        ai_quality_grade: 'A',
+        quality_grade: 'C',
+        override_primary_reason: 'visual_missed_water',
+      } as any,
+      adminId: 'admin-1',
+    });
+
+    expect(model.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'admin_overridden',
+        ai_error_pattern: 'visual_missed_water',
+      }),
+    );
+  });
+
+  it('classifies AI too optimistic and too conservative from grade rank', async () => {
+    const { service, model } = createService();
+
+    await service.logAdminQualityDecision({
+      submission: {
+        ...baseSubmission,
+        override_primary_reason: undefined,
+        ai_quality_grade: 'A',
+        quality_grade: 'C',
+      } as any,
+      adminId: 'admin-1',
+    });
+    await service.logAdminQualityDecision({
+      submission: {
+        ...baseSubmission,
+        override_primary_reason: undefined,
+        ai_quality_grade: 'C',
+        quality_grade: 'A',
+      } as any,
+      adminId: 'admin-1',
+    });
+
+    expect(model.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ ai_error_pattern: 'ai_too_optimistic' }),
+    );
+    expect(model.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ ai_error_pattern: 'ai_too_conservative' }),
+    );
+  });
+
   it('calculates analytics metrics safely', async () => {
     const { service } = createService([
       {
@@ -148,9 +218,17 @@ describe('QualityAuditLogService', () => {
       {
         event_type: 'admin_verified',
         waste_type: 'oil',
+        ai_quality_grade: 'B',
         final_quality_grade: 'B',
         is_overridden: false,
         created_at: '2026-05-21T01:00:00.000Z',
+      },
+      {
+        event_type: 'admin_verified',
+        waste_type: 'oil',
+        final_quality_grade: 'A',
+        is_overridden: false,
+        created_at: '2026-05-21T01:30:00.000Z',
       },
       {
         event_type: 'admin_overridden',
@@ -163,6 +241,9 @@ describe('QualityAuditLogService', () => {
         is_overridden: true,
         override_from: 'C',
         override_to: 'A',
+        override_reason_tags: ['sop_mismatch', 'visual_missed_sediment'],
+        override_primary_reason: 'sop_mismatch',
+        ai_error_pattern: 'sop_mismatch',
         created_at: '2026-05-21T02:00:00.000Z',
       },
     ]);
@@ -170,7 +251,7 @@ describe('QualityAuditLogService', () => {
     const analytics = await service.getAnalytics();
 
     expect(analytics.totalQualityChecks).toBe(2);
-    expect(analytics.totalAdminDecisions).toBe(2);
+    expect(analytics.totalAdminDecisions).toBe(3);
     expect(analytics.adminOverrideCount).toBe(1);
     expect(analytics.aiAcceptedCount).toBe(1);
     expect(analytics.overrideRate).toBe(0.5);
@@ -184,10 +265,44 @@ describe('QualityAuditLogService', () => {
       expect.objectContaining({ vision_llm: 1, fallback: 1 }),
     );
     expect(analytics.gradeDistribution.ai).toEqual({ A: 0, B: 1, C: 1 });
-    expect(analytics.gradeDistribution.admin).toEqual({ A: 1, B: 1, C: 0 });
+    expect(analytics.gradeDistribution.admin).toEqual({ A: 2, B: 1, C: 0 });
     expect(analytics.overrideMatrix).toEqual({ 'C->A': 1 });
+    expect(analytics.feedbackTagCounts).toEqual({
+      sop_mismatch: 1,
+      visual_missed_sediment: 1,
+    });
+    expect(analytics.primaryOverrideReasons).toEqual({ sop_mismatch: 1 });
+    expect(analytics.aiErrorPatterns).toEqual({ sop_mismatch: 1 });
     expect(analytics.byWasteType.food.adminOverrideCount).toBe(1);
     expect(analytics.recentOverrides).toHaveLength(1);
+  });
+
+  it('does not count admin decisions without AI grade as AI accepted', async () => {
+    const { service } = createService([
+      {
+        event_type: 'admin_verified',
+        waste_type: 'oil',
+        final_quality_grade: 'A',
+        is_overridden: false,
+        created_at: '2026-05-21T00:00:00.000Z',
+      },
+      {
+        event_type: 'admin_verified',
+        waste_type: 'oil',
+        ai_quality_grade: 'B',
+        final_quality_grade: 'B',
+        is_overridden: false,
+        created_at: '2026-05-21T01:00:00.000Z',
+      },
+    ]);
+
+    const analytics = await service.getAnalytics();
+
+    expect(analytics.totalAdminDecisions).toBe(2);
+    expect(analytics.aiAcceptedCount).toBe(1);
+    expect(analytics.adminOverrideCount).toBe(0);
+    expect(analytics.agreementRate).toBe(1);
+    expect(analytics.overrideRate).toBe(0);
   });
 
   it('filters analytics by wasteType and date range', async () => {

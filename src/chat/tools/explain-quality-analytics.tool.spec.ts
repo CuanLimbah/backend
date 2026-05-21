@@ -30,6 +30,9 @@ const baseAnalytics: QualityAiAnalytics = {
     'A->B': 1,
     'B->C': 2,
   },
+  feedbackTagCounts: {},
+  primaryOverrideReasons: {},
+  aiErrorPatterns: {},
   byWasteType: {
     food: {
       totalQualityChecks: 4,
@@ -202,7 +205,28 @@ describe('explain_quality_analytics tool', () => {
     expect(result).toContain('Grade B: 7');
     expect(result).toContain('POLA OVERRIDE GRADE');
     expect(result).toContain('A->B: 1 kasus');
+    expect(result).toContain('admin menurunkan grade dari rekomendasi AI');
     expect(result).toContain('B->C: 2 kasus');
+  });
+
+  it('describes upgrade override transitions using grade rank', async () => {
+    const service = createService({
+      ...baseAnalytics,
+      overrideMatrix: {
+        'C->B': 1,
+        'B->A': 1,
+      },
+    });
+    setQualityAuditLogService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain('C->B: 1 kasus');
+    expect(result).toContain('B->A: 1 kasus');
+    expect(result).toContain('admin menaikkan grade dari rekomendasi AI');
   });
 
   it('includes recent overrides', async () => {
@@ -264,6 +288,107 @@ describe('explain_quality_analytics tool', () => {
     expect(result).toContain(
       'Review pola override untuk memperbaiki prompt, SOP, atau guideline admin.',
     );
+  });
+
+  it('includes feedback section when analytics has feedback counts', async () => {
+    const service = createService({
+      ...baseAnalytics,
+      feedbackTagCounts: {
+        sop_mismatch: 2,
+        visual_missed_sediment: 1,
+      },
+      primaryOverrideReasons: {
+        sop_mismatch: 2,
+      },
+      aiErrorPatterns: {
+        ai_too_optimistic: 3,
+      },
+    });
+    setQualityAuditLogService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain('POLA FEEDBACK ADMIN');
+    expect(result).toContain('sop_mismatch: 2');
+    expect(result).toContain('visual_missed_sediment: 1');
+    expect(result).toContain('ai_too_optimistic: 3');
+  });
+
+  it('returns no feedback message when feedback counts are empty', async () => {
+    const service = createService(baseAnalytics);
+    setQualityAuditLogService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain('Belum ada feedback terstruktur dari admin.');
+  });
+
+  it('recommends SOP improvement when sop mismatch is common', async () => {
+    const service = createService({
+      ...baseAnalytics,
+      feedbackTagCounts: { sop_mismatch: 3 },
+    });
+    setQualityAuditLogService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain('Perbaiki dokumen SOP dan retrieval Supabase RAG.');
+  });
+
+  it('recommends vision prompt improvement when sediment is missed', async () => {
+    const service = createService({
+      ...baseAnalytics,
+      feedbackTagCounts: { visual_missed_sediment: 3 },
+    });
+    setQualityAuditLogService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain(
+      'Perkuat prompt vision untuk memperhatikan endapan dan campuran air.',
+    );
+  });
+
+  it('recommends photo upload guidance when photos are unclear', async () => {
+    const service = createService({
+      ...baseAnalytics,
+      feedbackTagCounts: { photo_unclear: 4 },
+    });
+    setQualityAuditLogService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain('Tambahkan panduan upload foto untuk user.');
+  });
+
+  it('recommends stricter grading when AI is too optimistic', async () => {
+    const service = createService({
+      ...baseAnalytics,
+      aiErrorPatterns: { ai_too_optimistic: 3 },
+    });
+    setQualityAuditLogService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain('AI cenderung terlalu optimistis');
   });
 
   it('does not mutate data or call write methods', async () => {

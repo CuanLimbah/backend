@@ -18,6 +18,34 @@ export type SedimentLevel = 'none' | 'low' | 'medium' | 'high' | 'unknown';
 
 export type VisionAssessmentSource = 'vision_llm' | 'fallback';
 
+export type QualityFeedbackTag =
+  | 'photo_unclear'
+  | 'visual_missed_sediment'
+  | 'visual_missed_water'
+  | 'visual_missed_food_residue'
+  | 'visual_missed_non_organic_contamination'
+  | 'wrong_waste_type_detected'
+  | 'sop_mismatch'
+  | 'rag_context_insufficient'
+  | 'fallback_sop_used'
+  | 'vision_fallback_used'
+  | 'ai_too_optimistic'
+  | 'ai_too_conservative'
+  | 'admin_manual_inspection'
+  | 'pricing_sensitive_case'
+  | 'other';
+
+export type QualityFeedbackSeverity = 'low' | 'medium' | 'high';
+
+export interface QualityFeedback {
+  tags: QualityFeedbackTag[];
+  primaryReason?: QualityFeedbackTag;
+  severity?: QualityFeedbackSeverity;
+  note?: string;
+  created_at: string;
+  created_by?: string;
+}
+
 export type QualityAuditEventType =
   | 'ai_quality_checked'
   | 'admin_verified'
@@ -108,6 +136,10 @@ export interface WasteSubmission {
   ai_visual_source?: VisionAssessmentSource;
   quality_grade_source?: QualityGradeSource;
   admin_quality_notes?: string;
+  quality_feedback?: QualityFeedback;
+  override_reason_tags?: QualityFeedbackTag[];
+  override_primary_reason?: QualityFeedbackTag;
+  override_feedback_severity?: QualityFeedbackSeverity;
 }
 
 export interface QualityAuditLog {
@@ -130,6 +162,13 @@ export interface QualityAuditLog {
   quality_grade_source?: QualityGradeSource;
   admin_quality_notes?: string;
   admin_id?: string;
+  quality_feedback?: QualityFeedback;
+  override_reason_tags?: QualityFeedbackTag[];
+  override_primary_reason?: QualityFeedbackTag;
+  override_feedback_severity?: QualityFeedbackSeverity;
+  ai_error_pattern?: string;
+  rag_improvement_suggestion?: string;
+  vision_improvement_suggestion?: string;
   is_overridden: boolean;
   override_from?: QualityGrade;
   override_to?: QualityGrade;
@@ -156,6 +195,9 @@ export interface QualityAiAnalytics {
     admin: Record<QualityGrade, number>;
   };
   overrideMatrix: Record<string, number>;
+  feedbackTagCounts: Record<string, number>;
+  primaryOverrideReasons: Record<string, number>;
+  aiErrorPatterns: Record<string, number>;
   byWasteType: Record<
     WasteType,
     {

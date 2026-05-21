@@ -10,6 +10,8 @@ import { Queue } from 'bullmq';
 import { randomUUID } from 'crypto';
 import { Model } from 'mongoose';
 import {
+  QualityFeedbackSeverity,
+  QualityFeedbackTag,
   QualityGrade,
   QualityGradeSource,
   WasteSubmission,
@@ -34,6 +36,28 @@ import { VerifySubmissionDto } from './dto/verify-submission.dto';
 @Injectable()
 export class SubmissionsService {
   private readonly logger = new Logger(SubmissionsService.name);
+  private readonly qualityFeedbackTags = new Set<QualityFeedbackTag>([
+    'photo_unclear',
+    'visual_missed_sediment',
+    'visual_missed_water',
+    'visual_missed_food_residue',
+    'visual_missed_non_organic_contamination',
+    'wrong_waste_type_detected',
+    'sop_mismatch',
+    'rag_context_insufficient',
+    'fallback_sop_used',
+    'vision_fallback_used',
+    'ai_too_optimistic',
+    'ai_too_conservative',
+    'admin_manual_inspection',
+    'pricing_sensitive_case',
+    'other',
+  ]);
+  private readonly qualityFeedbackSeverities = new Set<QualityFeedbackSeverity>([
+    'low',
+    'medium',
+    'high',
+  ]);
 
   constructor(
     @InjectModel(WasteSubmissionEntity.name)
@@ -190,6 +214,23 @@ export class SubmissionsService {
     });
     const earnings = toCurrencyAmount(pricingResult.earnings);
     const processedAt = new Date().toISOString();
+    const feedbackTags = this.normalizeFeedbackTags(dto.overrideReasonTags);
+    const primaryReason = this.normalizeFeedbackTag(dto.overridePrimaryReason);
+    const feedbackSeverity = this.normalizeFeedbackSeverity(
+      dto.overrideFeedbackSeverity,
+    );
+    const trimmedAdminNotes = dto.adminQualityNotes?.trim() || undefined;
+    const qualityFeedback =
+      feedbackTags.length || primaryReason || feedbackSeverity || trimmedAdminNotes
+        ? {
+            tags: feedbackTags,
+            primaryReason,
+            severity: feedbackSeverity,
+            note: trimmedAdminNotes,
+            created_at: processedAt,
+            created_by: adminId,
+          }
+        : undefined;
 
     const updatedSubmission = await this.submissionModel
       .findOneAndUpdate(
@@ -208,7 +249,11 @@ export class SubmissionsService {
           pricing_breakdown: pricingResult.breakdown,
           pricing_explanation: pricingResult.explanation,
           quality_grade_source: qualityGradeSource,
-          admin_quality_notes: dto.adminQualityNotes?.trim() || undefined,
+          admin_quality_notes: trimmedAdminNotes,
+          quality_feedback: qualityFeedback,
+          override_reason_tags: feedbackTags.length ? feedbackTags : undefined,
+          override_primary_reason: primaryReason,
+          override_feedback_severity: feedbackSeverity,
           notes: `Diverifikasi oleh ${adminId}`,
         },
         { new: true },
@@ -329,5 +374,23 @@ export class SubmissionsService {
 
   private isQualityGradeSource(source: QualityGradeSource): boolean {
     return source === 'ai' || source === 'admin';
+  }
+
+  private normalizeFeedbackTags(tags?: QualityFeedbackTag[]): QualityFeedbackTag[] {
+    if (!Array.isArray(tags)) return [];
+
+    return [...new Set(tags)].filter((tag) => this.qualityFeedbackTags.has(tag));
+  }
+
+  private normalizeFeedbackTag(tag?: QualityFeedbackTag): QualityFeedbackTag | undefined {
+    return tag && this.qualityFeedbackTags.has(tag) ? tag : undefined;
+  }
+
+  private normalizeFeedbackSeverity(
+    severity?: QualityFeedbackSeverity,
+  ): QualityFeedbackSeverity | undefined {
+    return severity && this.qualityFeedbackSeverities.has(severity)
+      ? severity
+      : undefined;
   }
 }

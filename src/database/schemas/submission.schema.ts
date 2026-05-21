@@ -3,6 +3,9 @@ import type {
   ContaminationLevel,
   AiVisualObservations,
   QualityAssessmentSource,
+  QualityFeedback,
+  QualityFeedbackSeverity,
+  QualityFeedbackTag,
   QualityGrade,
   QualityGradeSource,
   VisionAssessmentSource,
@@ -133,6 +136,18 @@ export class WasteSubmissionEntity implements WasteSubmission {
 
   @Prop()
   admin_quality_notes?: string;
+
+  @Prop({ type: Object })
+  quality_feedback?: QualityFeedback;
+
+  @Prop({ type: [String], default: undefined })
+  override_reason_tags?: QualityFeedbackTag[];
+
+  @Prop({ type: String, index: true })
+  override_primary_reason?: QualityFeedbackTag;
+
+  @Prop({ type: String, enum: ['low', 'medium', 'high'] satisfies QualityFeedbackSeverity[] })
+  override_feedback_severity?: QualityFeedbackSeverity;
 
   @Prop({ enum: ['inline', 'cloudinary'] satisfies StorageProvider[], default: 'inline' })
   storage_provider?: StorageProvider;

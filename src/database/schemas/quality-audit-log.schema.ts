@@ -5,6 +5,9 @@ import type {
   QualityAssessmentSource,
   QualityAuditEventType,
   QualityAuditLog,
+  QualityFeedback,
+  QualityFeedbackSeverity,
+  QualityFeedbackTag,
   QualityGrade,
   QualityGradeSource,
   VisionAssessmentSource,
@@ -93,6 +96,27 @@ export class QualityAuditLogEntity implements QualityAuditLog {
 
   @Prop({ type: String })
   admin_id?: string;
+
+  @Prop({ type: Object })
+  quality_feedback?: QualityFeedback;
+
+  @Prop({ type: [String], default: undefined })
+  override_reason_tags?: QualityFeedbackTag[];
+
+  @Prop({ type: String, index: true })
+  override_primary_reason?: QualityFeedbackTag;
+
+  @Prop({ type: String, enum: ['low', 'medium', 'high'] satisfies QualityFeedbackSeverity[], index: true })
+  override_feedback_severity?: QualityFeedbackSeverity;
+
+  @Prop({ type: String })
+  ai_error_pattern?: string;
+
+  @Prop({ type: String })
+  rag_improvement_suggestion?: string;
+
+  @Prop({ type: String })
+  vision_improvement_suggestion?: string;
 
   @Prop({ type: Boolean, required: true, index: true })
   is_overridden: boolean;

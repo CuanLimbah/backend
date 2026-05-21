@@ -234,4 +234,76 @@ describe('SubmissionsService', () => {
       { new: true },
     );
   });
+
+  it('stores structured quality feedback when provided', async () => {
+    const { service, submissionModel } = createService({
+      submission: {
+        ai_quality_grade: 'A',
+      },
+      pricingResult: {
+        qualityGrade: 'C',
+        finalPricePerKg: 1800,
+        earnings: 18000,
+      },
+    });
+
+    await service.verify(
+      'sub-1',
+      {
+        actualWeight: 10,
+        qualityGrade: 'C',
+        qualityGradeSource: 'admin',
+        adminQualityNotes: 'Admin melihat air dan endapan banyak.',
+        overrideReasonTags: ['visual_missed_water', 'visual_missed_sediment'],
+        overridePrimaryReason: 'visual_missed_water',
+        overrideFeedbackSeverity: 'high',
+      },
+      'admin-1',
+    );
+
+    expect(submissionModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { id: 'sub-1' },
+      expect.objectContaining({
+        quality_feedback: expect.objectContaining({
+          tags: ['visual_missed_water', 'visual_missed_sediment'],
+          primaryReason: 'visual_missed_water',
+          severity: 'high',
+          note: 'Admin melihat air dan endapan banyak.',
+          created_by: 'admin-1',
+        }),
+        override_reason_tags: [
+          'visual_missed_water',
+          'visual_missed_sediment',
+        ],
+        override_primary_reason: 'visual_missed_water',
+        override_feedback_severity: 'high',
+      }),
+      { new: true },
+    );
+  });
+
+  it('keeps verification working without feedback fields', async () => {
+    const { service, submissionModel } = createService();
+
+    await service.verify(
+      'sub-1',
+      {
+        actualWeight: 10,
+        qualityGrade: 'B',
+      },
+      'admin-1',
+    );
+
+    expect(submissionModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { id: 'sub-1' },
+      expect.objectContaining({
+        quality_grade: 'B',
+        quality_feedback: undefined,
+        override_reason_tags: undefined,
+        override_primary_reason: undefined,
+        override_feedback_severity: undefined,
+      }),
+      { new: true },
+    );
+  });
 });
