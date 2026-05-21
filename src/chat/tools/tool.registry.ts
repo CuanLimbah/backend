@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { UserRole } from '../../common/models';
 
 export interface AgentTool {
   name: string;
@@ -10,6 +11,7 @@ export interface AgentTool {
 export interface ToolContext {
   userId: string;
   isAuthenticated: boolean;
+  role?: UserRole;
 }
 
 export class ToolRegistry {
