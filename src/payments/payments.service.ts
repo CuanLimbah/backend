@@ -17,8 +17,9 @@ import { CreatePaymentDto } from './dto/create-payment.dto';
 export class PaymentsService {
   private readonly provider = 'midtrans';
 
-  private readonly frontendUrl =
-    process.env.FRONTEND_URL?.trim() || 'http://localhost:5173';
+  private readonly frontendUrl = (
+    process.env.FRONTEND_URL?.trim() || 'http://localhost:5173'
+  ).replace(/\/+$/, '');
 
   private readonly midtransServerKey = process.env.MIDTRANS_SERVER_KEY?.trim();
 
