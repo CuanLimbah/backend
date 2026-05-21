@@ -68,6 +68,9 @@ describe('SubmissionsService', () => {
       getCurrentBasePricePerKg: jest.fn().mockResolvedValue(3000),
       calculateFinalPrice: jest.fn().mockResolvedValue(pricingResult),
     };
+    const qualityAuditLogService = {
+      logAdminQualityDecision: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new SubmissionsService(
       submissionModel as any,
@@ -76,6 +79,7 @@ describe('SubmissionsService', () => {
       mediaQueue as any,
       cloudinaryService as any,
       pricingService as any,
+      qualityAuditLogService as any,
     );
 
     return {
@@ -83,11 +87,18 @@ describe('SubmissionsService', () => {
       submissionModel,
       transactionModel,
       pricingService,
+      qualityAuditLogService,
     };
   }
 
   it('uses PricingService when verifying a submission with quality grade', async () => {
-    const { service, submissionModel, transactionModel, pricingService } =
+    const {
+      service,
+      submissionModel,
+      transactionModel,
+      pricingService,
+      qualityAuditLogService,
+    } =
       createService();
 
     await service.verify('sub-1', { actualWeight: 10, qualityGrade: 'B' }, 'admin-1');
@@ -119,6 +130,13 @@ describe('SubmissionsService', () => {
         submission_id: 'sub-1',
       }),
     );
+    expect(qualityAuditLogService.logAdminQualityDecision).toHaveBeenCalledWith({
+      submission: expect.objectContaining({
+        id: 'sub-1',
+        quality_grade: 'B',
+      }),
+      adminId: 'admin-1',
+    });
   });
 
   it('keeps old verify payloads working by defaulting qualityGrade to A', async () => {

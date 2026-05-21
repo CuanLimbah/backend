@@ -13,6 +13,10 @@ import {
 } from './schemas/pickup-route.schema';
 import { WastePriceEntity, WastePriceSchema } from './schemas/price.schema';
 import {
+  QualityAuditLogEntity,
+  QualityAuditLogSchema,
+} from './schemas/quality-audit-log.schema';
+import {
   WasteSubmissionEntity,
   WasteSubmissionSchema,
 } from './schemas/submission.schema';
@@ -34,6 +38,7 @@ import { UserEntity, UserSchema } from './schemas/user.schema';
       { name: WasteSubmissionEntity.name, schema: WasteSubmissionSchema },
       { name: TransactionEntity.name, schema: TransactionSchema },
       { name: ActivityEventEntity.name, schema: ActivityEventSchema },
+      { name: QualityAuditLogEntity.name, schema: QualityAuditLogSchema },
     ]),
   ],
   providers: [DatabaseSeedService],

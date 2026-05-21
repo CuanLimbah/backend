@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { generateText } from 'ai';
@@ -11,6 +16,7 @@ import type {
 } from '../common/models';
 import { getLlmModel } from '../chat/llm.factory';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
+import { QualityAuditLogService } from '../quality-audit/quality-audit-log.service';
 import { QualityRagService } from './quality-rag.service';
 import { QualityVisionService } from './quality-vision.service';
 import type {
@@ -31,11 +37,14 @@ const LlmAssessmentSchema = z.object({
 
 @Injectable()
 export class QualityAssessmentService {
+  private readonly logger = new Logger(QualityAssessmentService.name);
+
   constructor(
     @InjectModel(WasteSubmissionEntity.name)
     private readonly submissionModel: Model<WasteSubmissionEntity>,
     private readonly qualityRagService: QualityRagService,
     private readonly qualityVisionService: QualityVisionService,
+    private readonly qualityAuditLogService: QualityAuditLogService,
     private readonly config: ConfigService,
   ) {}
 
@@ -97,7 +106,7 @@ export class QualityAssessmentService {
 
     const checkedAt = new Date().toISOString();
 
-    await this.submissionModel
+    const updatedSubmission = await this.submissionModel
       .findOneAndUpdate(
         { id: submission.id },
         {
@@ -128,7 +137,19 @@ export class QualityAssessmentService {
         },
         { new: true },
       )
+      .select({ _id: 0, __v: 0 })
+      .lean()
       .exec();
+
+    if (updatedSubmission) {
+      try {
+        await this.qualityAuditLogService.logAiQualityChecked(updatedSubmission);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to write quality audit log: ${String(error)}`,
+        );
+      }
+    }
 
     const { qualitySource: _qualitySource, ...publicResult } = assessment;
     return publicResult;

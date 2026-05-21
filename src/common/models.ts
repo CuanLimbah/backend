@@ -18,6 +18,11 @@ export type SedimentLevel = 'none' | 'low' | 'medium' | 'high' | 'unknown';
 
 export type VisionAssessmentSource = 'vision_llm' | 'fallback';
 
+export type QualityAuditEventType =
+  | 'ai_quality_checked'
+  | 'admin_verified'
+  | 'admin_overridden';
+
 export interface AiVisualObservations {
   imageQuality: ImageQuality;
   isWasteVisible: boolean;
@@ -103,6 +108,71 @@ export interface WasteSubmission {
   ai_visual_source?: VisionAssessmentSource;
   quality_grade_source?: QualityGradeSource;
   admin_quality_notes?: string;
+}
+
+export interface QualityAuditLog {
+  id: string;
+  submission_id: string;
+  user_id: string;
+  waste_type: WasteType;
+  event_type: QualityAuditEventType;
+  ai_quality_grade?: QualityGrade;
+  ai_quality_confidence?: number;
+  ai_contamination_level?: ContaminationLevel;
+  ai_quality_reason?: string;
+  ai_quality_rag_source?: 'rag' | 'fallback_sop';
+  ai_quality_model?: string;
+  ai_quality_source?: QualityAssessmentSource;
+  ai_visual_source?: VisionAssessmentSource;
+  ai_visual_model?: string;
+  ai_visual_observations?: AiVisualObservations;
+  final_quality_grade?: QualityGrade;
+  quality_grade_source?: QualityGradeSource;
+  admin_quality_notes?: string;
+  admin_id?: string;
+  is_overridden: boolean;
+  override_from?: QualityGrade;
+  override_to?: QualityGrade;
+  actual_weight?: number;
+  price_snapshot_per_kg?: number;
+  final_price_per_kg?: number;
+  earnings?: number;
+  created_at: string;
+}
+
+export interface QualityAiAnalytics {
+  totalQualityChecks: number;
+  totalAdminDecisions: number;
+  aiAcceptedCount: number;
+  adminOverrideCount: number;
+  overrideRate: number;
+  agreementRate: number;
+  averageConfidence: number | null;
+  lowConfidenceReviewCount: number;
+  ragUsage: Record<string, number>;
+  visionUsage: Record<string, number>;
+  gradeDistribution: {
+    ai: Record<QualityGrade, number>;
+    admin: Record<QualityGrade, number>;
+  };
+  overrideMatrix: Record<string, number>;
+  byWasteType: Record<
+    WasteType,
+    {
+      totalQualityChecks: number;
+      adminOverrideCount: number;
+      averageConfidence: number | null;
+    }
+  >;
+  recentOverrides: Array<{
+    submission_id: string;
+    waste_type: WasteType;
+    ai_quality_grade?: QualityGrade;
+    final_quality_grade?: QualityGrade;
+    ai_quality_confidence?: number;
+    admin_quality_notes?: string;
+    created_at: string;
+  }>;
 }
 
 export interface Transaction {

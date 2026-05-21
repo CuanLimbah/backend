@@ -34,9 +34,7 @@ describe('QualityAssessmentService', () => {
     };
     const submissionModel = {
       findOne: jest.fn().mockReturnValue(queryResult(submission)),
-      findOneAndUpdate: jest.fn().mockReturnValue({
-        exec: jest.fn().mockResolvedValue(updated),
-      }),
+      findOneAndUpdate: jest.fn().mockReturnValue(queryResult(updated)),
     };
     const qualityRagService = {
       getQualityCriteria: jest.fn().mockResolvedValue({
@@ -69,10 +67,14 @@ describe('QualityAssessmentService', () => {
     const config = {
       get: jest.fn().mockReturnValue(undefined),
     };
+    const qualityAuditLogService = {
+      logAiQualityChecked: jest.fn().mockResolvedValue(undefined),
+    };
     const service = new QualityAssessmentService(
       submissionModel as any,
       qualityRagService as any,
       qualityVisionService as any,
+      qualityAuditLogService as any,
       config as any,
     );
 
@@ -81,6 +83,7 @@ describe('QualityAssessmentService', () => {
       submissionModel,
       qualityRagService,
       qualityVisionService,
+      qualityAuditLogService,
     };
   }
 

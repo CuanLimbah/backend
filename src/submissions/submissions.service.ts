@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { InjectModel } from '@nestjs/mongoose';
 import { Queue } from 'bullmq';
@@ -21,12 +26,15 @@ import {
   MEDIA_QUEUE,
 } from '../infrastructure/queues.constants';
 import { PricingService } from '../pricing/pricing.service';
+import { QualityAuditLogService } from '../quality-audit/quality-audit-log.service';
 import { CreateSubmissionDto } from './dto/create-submission.dto';
 import { RejectSubmissionDto } from './dto/reject-submission.dto';
 import { VerifySubmissionDto } from './dto/verify-submission.dto';
 
 @Injectable()
 export class SubmissionsService {
+  private readonly logger = new Logger(SubmissionsService.name);
+
   constructor(
     @InjectModel(WasteSubmissionEntity.name)
     private readonly submissionModel: Model<WasteSubmissionEntity>,
@@ -38,6 +46,7 @@ export class SubmissionsService {
     private readonly mediaQueue: Queue,
     private readonly cloudinaryService: CloudinaryService,
     private readonly pricingService: PricingService,
+    private readonly qualityAuditLogService: QualityAuditLogService,
   ) {}
 
   async create(userId: string, dto: CreateSubmissionDto) {
@@ -239,6 +248,19 @@ export class SubmissionsService {
         earnings,
       },
     });
+
+    if (updatedSubmission) {
+      try {
+        await this.qualityAuditLogService.logAdminQualityDecision({
+          submission: updatedSubmission,
+          adminId,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to write quality audit log: ${String(error)}`,
+        );
+      }
+    }
 
     return updatedSubmission;
   }
