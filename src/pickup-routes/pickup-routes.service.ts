@@ -5,6 +5,7 @@ import { Queue } from 'bullmq';
 import { randomUUID } from 'crypto';
 import { Model } from 'mongoose';
 import type { PickupRouteStatus } from '../common/models';
+import { DropPointEntity } from '../database/schemas/drop-point.schema';
 import { PickupRouteEntity } from '../database/schemas/pickup-route.schema';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
 import { UserEntity } from '../database/schemas/user.schema';
@@ -13,6 +14,7 @@ import {
   ACTIVITY_QUEUE,
 } from '../infrastructure/queues.constants';
 import { AssignPickupRouteDto } from './dto/assign-pickup-route.dto';
+import { UpdateDriverLocationDto } from './dto/update-driver-location.dto';
 import { UpdatePickupRouteStatusDto } from './dto/update-pickup-route-status.dto';
 
 @Injectable()
@@ -24,6 +26,8 @@ export class PickupRoutesService {
     private readonly submissionModel: Model<WasteSubmissionEntity>,
     @InjectModel(UserEntity.name)
     private readonly userModel: Model<UserEntity>,
+    @InjectModel(DropPointEntity.name)
+    private readonly dropPointModel: Model<DropPointEntity>,
     @InjectQueue(ACTIVITY_QUEUE)
     private readonly activityQueue: Queue,
   ) {}
@@ -31,17 +35,19 @@ export class PickupRoutesService {
   async assign(dto: AssignPickupRouteDto, adminId: string) {
     const submissionId = dto.submissionId?.trim();
     const driverId = dto.driverId?.trim();
+    const dropPointId = dto.dropPointId?.trim();
 
-    if (!submissionId || !driverId) {
-      throw new BadRequestException('submissionId dan driverId wajib diisi');
+    if (!submissionId || !driverId || !dropPointId) {
+      throw new BadRequestException('submissionId, driverId, dan dropPointId wajib diisi');
     }
 
-    const [submission, driver, existingRoute] = await Promise.all([
+    const [submission, driver, dropPoint, existingRoute] = await Promise.all([
       this.submissionModel.findOne({ id: submissionId }).lean().exec(),
       this.userModel
         .findOne({ id: driverId, role: 'driver', status: 'active' })
         .lean()
         .exec(),
+      this.dropPointModel.findOne({ id: dropPointId }).lean().exec(),
       this.pickupRouteModel
         .findOne({
           submission_id: submissionId,
@@ -59,6 +65,10 @@ export class PickupRoutesService {
       throw new NotFoundException('Driver aktif tidak ditemukan');
     }
 
+    if (!dropPoint) {
+      throw new NotFoundException('Drop point tidak ditemukan');
+    }
+
     if (existingRoute) {
       throw new BadRequestException('Setoran ini sudah memiliki rute penjemputan aktif');
     }
@@ -74,9 +84,10 @@ export class PickupRoutesService {
       submission_id: submission.id,
       user_id: submission.user_id,
       driver_id: driver.id,
-      address: dto.address?.trim() || undefined,
-      latitude: this.toOptionalCoordinate(dto.latitude),
-      longitude: this.toOptionalCoordinate(dto.longitude),
+      drop_point_id: dropPoint.id,
+      address: dropPoint.address,
+      latitude: dropPoint.latitude,
+      longitude: dropPoint.longitude,
       scheduled_at: dto.scheduledAt?.trim() || now.toISOString(),
       status: 'assigned',
       created_at: now.toISOString(),
@@ -91,6 +102,7 @@ export class PickupRoutesService {
         admin_id: adminId,
         driver_id: driver.id,
         submission_id: submission.id,
+        drop_point_id: dropPoint.id,
       },
     });
 
@@ -178,6 +190,44 @@ export class PickupRoutesService {
     return this.enrichRoute(updatedRoute!);
   }
 
+  async updateDriverLocation(
+    routeId: string,
+    driverId: string,
+    dto: UpdateDriverLocationDto,
+  ) {
+    const latitude = this.toRequiredCoordinate(dto.latitude, 'latitude');
+    const longitude = this.toRequiredCoordinate(dto.longitude, 'longitude');
+
+    const route = await this.pickupRouteModel
+      .findOne({ id: routeId, driver_id: driverId })
+      .lean()
+      .exec();
+
+    if (!route) {
+      throw new NotFoundException('Rute penjemputan tidak ditemukan');
+    }
+
+    if (route.status === 'completed' || route.status === 'cancelled') {
+      throw new BadRequestException('Lokasi tidak bisa diperbarui untuk rute selesai');
+    }
+
+    const updatedRoute = await this.pickupRouteModel
+      .findOneAndUpdate(
+        { id: routeId, driver_id: driverId },
+        {
+          driver_latitude: latitude,
+          driver_longitude: longitude,
+          driver_location_updated_at: new Date().toISOString(),
+        },
+        { new: true },
+      )
+      .select({ _id: 0, __v: 0 })
+      .lean()
+      .exec();
+
+    return this.enrichRoute(updatedRoute!);
+  }
+
   private isValidStatus(status: PickupRouteStatus): boolean {
     return ['assigned', 'on_the_way', 'picked_up', 'completed', 'cancelled'].includes(
       status,
@@ -202,13 +252,18 @@ export class PickupRoutesService {
     return {};
   }
 
-  private toOptionalCoordinate(value?: number): number | undefined {
+  private toRequiredCoordinate(value: number, fieldName: string): number {
     const coordinate = Number(value);
-    return Number.isFinite(coordinate) ? coordinate : undefined;
+
+    if (!Number.isFinite(coordinate)) {
+      throw new BadRequestException(`${fieldName} tidak valid`);
+    }
+
+    return coordinate;
   }
 
   private async enrichRoute(route: PickupRouteEntity) {
-    const [submission, user, driver] = await Promise.all([
+    const [submission, user, driver, dropPoint] = await Promise.all([
       this.submissionModel
         .findOne({ id: route.submission_id })
         .select({ _id: 0, __v: 0 })
@@ -224,6 +279,13 @@ export class PickupRoutesService {
         .select({ _id: 0, __v: 0, password_hash: 0 })
         .lean()
         .exec(),
+      route.drop_point_id
+        ? this.dropPointModel
+            .findOne({ id: route.drop_point_id })
+            .select({ _id: 0, __v: 0 })
+            .lean()
+            .exec()
+        : Promise.resolve(null),
     ]);
 
     return {
@@ -233,6 +295,11 @@ export class PickupRoutesService {
       driver_name: driver?.full_name || '-',
       driver_email: driver?.email || '-',
       driver_vehicle: driver?.vehicle_number,
+      drop_point: dropPoint,
+      drop_point_name: dropPoint?.name,
+      drop_point_address: dropPoint?.address,
+      drop_point_latitude: dropPoint?.latitude,
+      drop_point_longitude: dropPoint?.longitude,
       submission,
     };
   }

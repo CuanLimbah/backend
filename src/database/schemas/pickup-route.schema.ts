@@ -19,6 +19,9 @@ export class PickupRouteEntity implements PickupRoute {
   @Prop({ required: true, index: true })
   driver_id: string;
 
+  @Prop({ index: true })
+  drop_point_id?: string;
+
   @Prop({ trim: true })
   address?: string;
 
@@ -27,6 +30,15 @@ export class PickupRouteEntity implements PickupRoute {
 
   @Prop()
   longitude?: number;
+
+  @Prop()
+  driver_latitude?: number;
+
+  @Prop()
+  driver_longitude?: number;
+
+  @Prop()
+  driver_location_updated_at?: string;
 
   @Prop({ required: true, index: true })
   scheduled_at: string;

@@ -5,6 +5,7 @@ import { CurrentUser } from '../common/current-user.decorator';
 import type { PublicUser } from '../common/models';
 import { Roles } from '../common/roles.decorator';
 import { AssignPickupRouteDto } from './dto/assign-pickup-route.dto';
+import { UpdateDriverLocationDto } from './dto/update-driver-location.dto';
 import { UpdatePickupRouteStatusDto } from './dto/update-pickup-route-status.dto';
 import { PickupRoutesService } from './pickup-routes.service';
 
@@ -45,5 +46,15 @@ export class PickupRoutesController {
     @CurrentUser() user: PublicUser,
   ) {
     return this.pickupRoutesService.updateStatus(id, user.id, dto);
+  }
+
+  @Patch('driver/pickup-routes/:id/location')
+  @Roles('driver')
+  updateDriverLocation(
+    @Param('id') id: string,
+    @Body() dto: UpdateDriverLocationDto,
+    @CurrentUser() user: PublicUser,
+  ) {
+    return this.pickupRoutesService.updateDriverLocation(id, user.id, dto);
   }
 }

@@ -440,9 +440,13 @@ export interface PickupRoute {
   submission_id: string;
   user_id: string;
   driver_id: string;
+  drop_point_id?: string;
   address?: string;
   latitude?: number;
   longitude?: number;
+  driver_latitude?: number;
+  driver_longitude?: number;
+  driver_location_updated_at?: string;
   scheduled_at: string;
   status: PickupRouteStatus;
   created_at: string;

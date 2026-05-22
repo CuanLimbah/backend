@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AdminStats, WasteType } from '../common/models';
 import { toPublicUser } from '../common/utils';
+import { DropPointEntity } from '../database/schemas/drop-point.schema';
 import { PaymentEntity } from '../database/schemas/payment.schema';
 import { PickupRouteEntity } from '../database/schemas/pickup-route.schema';
 import { WastePriceEntity } from '../database/schemas/price.schema';
@@ -27,15 +28,18 @@ export class AdminService {
     private readonly pickupRouteModel: Model<PickupRouteEntity>,
     @InjectModel(PaymentEntity.name)
     private readonly paymentModel: Model<PaymentEntity>,
+    @InjectModel(DropPointEntity.name)
+    private readonly dropPointModel: Model<DropPointEntity>,
     private readonly usersService: UsersService,
     private readonly transactionsService: TransactionsService,
   ) {}
 
   async getDashboard() {
-    const [stats, prices, pendingSubmissions, users, drivers, pickupRoutes, payments, withdrawals] =
+    const [stats, prices, dropPoints, pendingSubmissions, users, drivers, pickupRoutes, payments, withdrawals] =
       await Promise.all([
         this.getStats(),
         this.priceModel.find().select({ _id: 0, __v: 0 }).sort({ waste_type: 1 }).lean().exec(),
+        this.dropPointModel.find().select({ _id: 0, __v: 0 }).sort({ name: 1 }).lean().exec(),
         this.submissionModel
           .find({ status: 'pending' })
           .select({
@@ -58,6 +62,7 @@ export class AdminService {
     return {
       stats,
       prices,
+      drop_points: dropPoints,
       pending_submissions: pendingSubmissions,
       users,
       drivers,
