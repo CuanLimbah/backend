@@ -347,7 +347,7 @@ describe('explain_quality_assessment tool', () => {
     );
 
     expect(result).toContain(
-      'Multimodal RAG belum digunakan karena embedding gambar/visual belum tersedia.',
+      'Multimodal RAG belum digunakan karena embedding visual-text dari observasi visual belum tersedia.',
     );
   });
 

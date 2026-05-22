@@ -69,13 +69,13 @@ function getRecommendations(analytics: QualityDatasetReadinessAnalytics): string
   }
   if ((analytics.embeddingCoverage?.missingEmbeddingCases ?? 0) > 0) {
     recommendations.push(
-      '- Jalankan backfill embedding untuk eligible quality cases.',
+      '- Jalankan backfill embedding visual-text untuk eligible quality cases.',
     );
   }
 
   return recommendations.length
     ? recommendations.join('\n')
-    : '- Pertahankan kualitas data historis dan mulai siapkan desain image embedding untuk tahap berikutnya.';
+    : '- Pertahankan kualitas data historis dan evaluasi coverage embedding visual-text dari observasi visual.';
 }
 
 function buildExplanation(
@@ -146,7 +146,7 @@ function buildExplanation(
     getRecommendations(analytics),
     '',
     'CATATAN KEAMANAN',
-    'Dataset readiness hanya menyiapkan data historis tervalidasi. Sistem belum menjalankan Multimodal RAG, image embedding, training model, auto-approval, atau perubahan payout.',
+    'Dataset readiness digunakan untuk memantau kesiapan data historis dan embedding coverage. Pada tahap MVP ini, Multimodal RAG hanya memakai visual-text embedding dari observasi visual dan pencarian kasus historis mirip sebagai konteks tambahan. Sistem tidak menjalankan training model, auto-approval, perubahan payout, wallet update, atau transaksi otomatis. Admin tetap menjadi validator akhir.',
   ].join('\n');
 }
 

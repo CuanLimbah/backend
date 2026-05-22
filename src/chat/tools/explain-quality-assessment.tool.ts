@@ -250,7 +250,7 @@ function formatSimilarCasesSection(submission: WasteSubmission): string {
     );
   } else if (submission.ai_multimodal_rag_source === 'embedding_unavailable') {
     lines.push(
-      '- Multimodal RAG belum digunakan karena embedding gambar/visual belum tersedia.',
+      '- Multimodal RAG belum digunakan karena embedding visual-text dari observasi visual belum tersedia.',
     );
   } else if (submission.ai_multimodal_rag_source === 'none') {
     lines.push('- Tidak ditemukan kasus historis yang cukup mirip.');

@@ -129,7 +129,24 @@ describe('explain_quality_dataset_readiness tool', () => {
 
     expect(result).toContain('Embedding coverage sebagian siap.');
     expect(result).toContain(
-      'Jalankan backfill embedding untuk eligible quality cases.',
+      'Jalankan backfill embedding visual-text untuk eligible quality cases.',
     );
+  });
+
+  it('explains the MVP safety note without claiming true image embedding', async () => {
+    const service = createService(baseAnalytics);
+    setQualityCaseDatasetService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain('visual-text embedding');
+    expect(result).toContain('konteks tambahan');
+    expect(result).toContain('tidak menjalankan training model');
+    expect(result).toContain('auto-approval');
+    expect(result).toContain('perubahan payout');
+    expect(result).toContain('Admin tetap menjadi validator akhir');
   });
 });

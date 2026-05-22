@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -88,11 +89,25 @@ export class QualityDatasetController {
     @Query('limit') limit?: string,
     @Query('minSimilarity') minSimilarity?: string,
   ) {
+    if (!submissionId?.trim()) {
+      throw new BadRequestException('submissionId wajib diisi');
+    }
+
+    const parsedLimit = limit ? Number(limit) : undefined;
+    if (limit && Number.isNaN(parsedLimit)) {
+      throw new BadRequestException('limit harus berupa angka');
+    }
+
+    const parsedMinSimilarity = minSimilarity ? Number(minSimilarity) : undefined;
+    if (minSimilarity && Number.isNaN(parsedMinSimilarity)) {
+      throw new BadRequestException('minSimilarity harus berupa angka');
+    }
+
     return this.qualityCaseDatasetService.getSimilarCasesForSubmission(
-      submissionId,
+      submissionId.trim(),
       {
-        limit: limit ? Number(limit) : undefined,
-        minSimilarity: minSimilarity ? Number(minSimilarity) : undefined,
+        limit: parsedLimit,
+        minSimilarity: parsedMinSimilarity,
       },
     );
   }
