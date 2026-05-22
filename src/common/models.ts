@@ -30,6 +30,18 @@ export type MultimodalRagSource =
   | 'none'
   | 'embedding_unavailable';
 
+export type QualityVectorSyncStatus =
+  | 'pending'
+  | 'synced'
+  | 'failed'
+  | 'skipped';
+
+export type QualityVectorProvider =
+  | 'application_cosine'
+  | 'supabase_pgvector'
+  | 'fallback_none'
+  | 'embedding_unavailable';
+
 export type QualityFeedbackTag =
   | 'photo_unclear'
   | 'visual_missed_sediment'
@@ -156,6 +168,7 @@ export interface WasteSubmission {
   ai_similar_case_top_score?: number;
   ai_multimodal_rag_used?: boolean;
   ai_multimodal_rag_source?: MultimodalRagSource;
+  ai_multimodal_rag_provider?: QualityVectorProvider;
   ai_multimodal_rag_model?: string;
   quality_grade_source?: QualityGradeSource;
   admin_quality_notes?: string;
@@ -183,6 +196,7 @@ export interface QualityAuditLog {
   ai_visual_observations?: AiVisualObservations;
   ai_multimodal_rag_used?: boolean;
   ai_multimodal_rag_source?: string;
+  ai_multimodal_rag_provider?: QualityVectorProvider;
   ai_similar_case_ids?: string[];
   ai_similar_case_count?: number;
   ai_similar_case_top_score?: number;
@@ -249,6 +263,13 @@ export interface QualityAiAnalytics {
     sourceUsage: {
       similar_quality_cases: number;
       none: number;
+      embedding_unavailable: number;
+      unknown: number;
+    };
+    providerUsage?: {
+      application_cosine: number;
+      supabase_pgvector: number;
+      fallback_none: number;
       embedding_unavailable: number;
       unknown: number;
     };
@@ -321,11 +342,19 @@ export interface QualityCaseDatasetRecord {
   image_embedding_status?: ImageEmbeddingStatus;
   image_embedding_error?: string;
   similarity_search_ready?: boolean;
+  supabase_vector_synced?: boolean;
+  supabase_vector_synced_at?: string;
+  supabase_vector_id?: string;
+  supabase_vector_sync_status?: QualityVectorSyncStatus;
+  supabase_vector_sync_error?: string;
+  supabase_vector_embedding_model?: string;
+  supabase_vector_embedding_source?: ImageEmbeddingSource;
   ai_similar_case_ids?: string[];
   ai_similar_case_count?: number;
   ai_similar_case_top_score?: number;
   ai_multimodal_rag_used?: boolean;
   ai_multimodal_rag_source?: MultimodalRagSource;
+  ai_multimodal_rag_provider?: QualityVectorProvider;
   ai_multimodal_rag_model?: string;
   actual_weight?: number;
   price_snapshot_per_kg?: number;
@@ -364,6 +393,13 @@ export interface QualityDatasetReadinessAnalytics {
     embeddedCases: number;
     missingEmbeddingCases: number;
     embeddingCoverageRate: number;
+  };
+  supabaseVectorCoverage?: {
+    totalEligibleCases: number;
+    syncedCases: number;
+    unsyncedCases: number;
+    failedSyncCases: number;
+    syncCoverageRate: number;
   };
   recentEligibleCases: Array<{
     submission_id: string;

@@ -111,4 +111,81 @@ export class QualityDatasetController {
       },
     );
   }
+
+  @Post('vector/backfill')
+  backfillSupabaseVectors(
+    @Body('limit') bodyLimit?: number,
+    @Body('force') bodyForce?: boolean,
+    @Query('limit') queryLimit?: string,
+    @Query('force') queryForce?: string,
+  ) {
+    const limit = this.parseOptionalNumber(bodyLimit ?? queryLimit, 'limit');
+    const force =
+      bodyForce ??
+      (queryForce == null ? undefined : ['true', '1', 'yes'].includes(queryForce));
+
+    return this.qualityCaseDatasetService.backfillSupabaseVectors({
+      limit,
+      force,
+    });
+  }
+
+  @Post('cases/:submissionId/vector-sync')
+  syncCaseVector(@Param('submissionId') submissionId: string) {
+    if (!submissionId?.trim()) {
+      throw new BadRequestException('submissionId wajib diisi');
+    }
+
+    return this.qualityCaseDatasetService.syncCaseVectorToSupabase(
+      submissionId.trim(),
+    );
+  }
+
+  @Get('vector/status')
+  getVectorStatus() {
+    return this.qualityCaseDatasetService.getVectorSyncStatus();
+  }
+
+  @Get('vector/similar-cases')
+  getVectorSimilarCases(
+    @Query('submissionId') submissionId: string,
+    @Query('limit') limit?: string,
+    @Query('minSimilarity') minSimilarity?: string,
+    @Query('provider') provider: 'supabase_pgvector' | 'application_cosine' | 'auto' = 'auto',
+  ) {
+    if (!submissionId?.trim()) {
+      throw new BadRequestException('submissionId wajib diisi');
+    }
+
+    if (!['auto', 'supabase_pgvector', 'application_cosine'].includes(provider)) {
+      throw new BadRequestException('provider tidak valid');
+    }
+
+    const parsedLimit = this.parseOptionalNumber(limit, 'limit');
+    const parsedMinSimilarity = this.parseOptionalNumber(
+      minSimilarity,
+      'minSimilarity',
+    );
+
+    return this.qualityCaseDatasetService.getSimilarCasesForSubmissionWithProvider(
+      submissionId.trim(),
+      {
+        limit: parsedLimit,
+        minSimilarity: parsedMinSimilarity,
+        provider,
+      },
+    );
+  }
+
+  private parseOptionalNumber(
+    value: string | number | undefined,
+    fieldName: string,
+  ): number | undefined {
+    if (value == null || value === '') return undefined;
+    const parsed = Number(value);
+    if (Number.isNaN(parsed)) {
+      throw new BadRequestException(`${fieldName} harus berupa angka`);
+    }
+    return parsed;
+  }
 }

@@ -74,6 +74,7 @@ export class QualityAuditLogService {
       ai_visual_observations: submission.ai_visual_observations,
       ai_multimodal_rag_used: submission.ai_multimodal_rag_used,
       ai_multimodal_rag_source: submission.ai_multimodal_rag_source,
+      ai_multimodal_rag_provider: submission.ai_multimodal_rag_provider,
       ai_similar_case_ids: submission.ai_similar_case_ids,
       ai_similar_case_count: submission.ai_similar_case_count,
       ai_similar_case_top_score: submission.ai_similar_case_top_score,
@@ -380,6 +381,7 @@ export class QualityAuditLogService {
         'embedding_unavailable',
         'unknown',
       ]) as QualityAiAnalytics['multimodalRag']['sourceUsage'],
+      providerUsage: this.buildMultimodalProviderUsage(aiLogs),
       byWasteType: {
         food: this.buildMultimodalWasteTypeAnalytics(logs, 'food'),
         oil: this.buildMultimodalWasteTypeAnalytics(logs, 'oil'),
@@ -425,6 +427,43 @@ export class QualityAuditLogService {
         notUsedAdminLogs.length,
       ),
     };
+  }
+
+  private buildMultimodalProviderUsage(
+    aiLogs: QualityAuditLog[],
+  ): NonNullable<QualityAiAnalytics['multimodalRag']['providerUsage']> {
+    return aiLogs.reduce<NonNullable<QualityAiAnalytics['multimodalRag']['providerUsage']>>(
+      (counts, log) => {
+        const provider = this.getMultimodalProvider(log);
+        counts[provider] = (counts[provider] ?? 0) + 1;
+        return counts;
+      },
+      {
+        application_cosine: 0,
+        supabase_pgvector: 0,
+        fallback_none: 0,
+        embedding_unavailable: 0,
+        unknown: 0,
+      },
+    );
+  }
+
+  private getMultimodalProvider(
+    log: QualityAuditLog,
+  ): keyof NonNullable<QualityAiAnalytics['multimodalRag']['providerUsage']> {
+    if (log.ai_multimodal_rag_provider) {
+      return log.ai_multimodal_rag_provider;
+    }
+    if (log.ai_multimodal_rag_source === 'embedding_unavailable') {
+      return 'embedding_unavailable';
+    }
+    if (log.ai_multimodal_rag_source === 'none') {
+      return 'fallback_none';
+    }
+    if (log.ai_multimodal_rag_source === 'similar_quality_cases') {
+      return 'application_cosine';
+    }
+    return 'unknown';
   }
 
   private countBy<T extends QualityAuditLog>(

@@ -313,6 +313,7 @@ describe('explain_quality_assessment tool', () => {
       ...baseSubmission,
       ai_multimodal_rag_used: true,
       ai_multimodal_rag_source: 'similar_quality_cases',
+      ai_multimodal_rag_provider: 'supabase_pgvector',
       ai_similar_case_ids: ['sub-old-1', 'sub-old-2'],
       ai_similar_case_count: 2,
       ai_similar_case_top_score: 0.86,
@@ -331,6 +332,31 @@ describe('explain_quality_assessment tool', () => {
     expect(result).toContain('Jumlah kasus mirip: 2');
     expect(result).toContain('Top similarity score: 86%');
     expect(result).toContain('sub-old-1, sub-old-2');
+    expect(result).toContain(
+      'Kasus historis mirip diambil melalui Supabase pgvector.',
+    );
+  });
+
+  it('mentions application cosine fallback provider', async () => {
+    const model = createModel({
+      ...baseSubmission,
+      ai_multimodal_rag_used: true,
+      ai_multimodal_rag_source: 'similar_quality_cases',
+      ai_multimodal_rag_provider: 'application_cosine',
+      ai_similar_case_ids: ['sub-old-1'],
+      ai_similar_case_count: 1,
+      ai_similar_case_top_score: 0.8,
+    });
+    setQualityAssessmentSubmissionModel(model as any);
+
+    const result = await tool?.execute(
+      { submission_id: 'sub-1' },
+      { userId: 'user-1', isAuthenticated: true, role: 'user' },
+    );
+
+    expect(result).toContain(
+      'Kasus historis mirip diambil melalui fallback application-level cosine similarity.',
+    );
   });
 
   it('explains embedding unavailable for multimodal RAG', async () => {
@@ -347,7 +373,7 @@ describe('explain_quality_assessment tool', () => {
     );
 
     expect(result).toContain(
-      'Multimodal RAG belum digunakan karena embedding visual-text dari observasi visual belum tersedia.',
+      'Multimodal RAG belum digunakan karena embedding visual-text belum tersedia.',
     );
   });
 

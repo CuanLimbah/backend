@@ -14,6 +14,7 @@ import type {
   ContaminationLevel,
   MultimodalRagSource,
   QualityGrade,
+  QualityVectorProvider,
 } from '../common/models';
 import { getLlmModel } from '../chat/llm.factory';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
@@ -41,6 +42,7 @@ const LlmAssessmentSchema = z.object({
 type MultimodalRagMetadata = {
   used: boolean;
   source: MultimodalRagSource;
+  provider: QualityVectorProvider;
   model?: string;
   similarCaseIds: string[];
   similarCaseCount: number;
@@ -145,6 +147,7 @@ export class QualityAssessmentService {
           ai_similar_case_top_score: multimodalRag.topScore,
           ai_multimodal_rag_used: multimodalRag.used,
           ai_multimodal_rag_source: multimodalRag.source,
+          ai_multimodal_rag_provider: multimodalRag.provider,
           ai_multimodal_rag_model: multimodalRag.model,
           ...(visualObservation
             ? {
@@ -457,6 +460,7 @@ Guardrails:
     const base: MultimodalRagMetadata = {
       used: false,
       source: 'embedding_unavailable',
+      provider: 'embedding_unavailable',
       similarCaseIds: [],
       similarCaseCount: 0,
     };
@@ -473,18 +477,33 @@ Guardrails:
         return base;
       }
 
-      const similarCases = await this.qualityCaseDatasetService.findSimilarCases({
+      const searchInput = {
         wasteType: input.submission.waste_type,
         embedding: embeddingResult.embedding,
         excludeSubmissionId: input.submission.id,
         limit: 5,
         minSimilarity: 0.7,
-      });
+      };
+      const similarSearch =
+        typeof this.qualityCaseDatasetService.findSimilarCasesWithProvider ===
+        'function'
+          ? await this.qualityCaseDatasetService.findSimilarCasesWithProvider(
+              searchInput,
+            )
+          : {
+              cases: await this.qualityCaseDatasetService.findSimilarCases(
+                searchInput,
+              ),
+              provider: 'application_cosine' as QualityVectorProvider,
+              fallbackUsed: true,
+            };
+      const similarCases = similarSearch.cases;
 
       if (similarCases.length === 0) {
         return {
           used: false,
           source: 'none',
+          provider: 'fallback_none',
           model: embeddingResult.model,
           similarCaseIds: [],
           similarCaseCount: 0,
@@ -494,6 +513,7 @@ Guardrails:
       return {
         used: true,
         source: 'similar_quality_cases',
+        provider: similarSearch.provider,
         model: embeddingResult.model,
         similarCaseIds: similarCases.map((item) => item.submission_id),
         similarCaseCount: similarCases.length,

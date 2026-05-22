@@ -59,6 +59,13 @@ const baseAnalytics: QualityAiAnalytics = {
       embedding_unavailable: 2,
       unknown: 0,
     },
+    providerUsage: {
+      supabase_pgvector: 6,
+      application_cosine: 2,
+      fallback_none: 2,
+      embedding_unavailable: 2,
+      unknown: 0,
+    },
     byWasteType: {
       food: {
         totalAiQualityChecks: 4,
@@ -250,6 +257,8 @@ describe('explain_quality_analytics tool', () => {
     expect(result).toContain('Embedding unavailable: 2');
     expect(result).toContain('Tidak ada kasus mirip: 2');
     expect(result).toContain('Rata-rata top similarity: 81%');
+    expect(result).toContain('Provider Supabase pgvector: 6');
+    expect(result).toContain('Provider application cosine fallback: 2');
     expect(result).toContain(
       'Override rate saat Multimodal RAG digunakan: 15%',
     );
@@ -258,6 +267,9 @@ describe('explain_quality_analytics tool', () => {
     );
     expect(result).toContain(
       'Multimodal RAG hanya memberi konteks tambahan dari kasus historis.',
+    );
+    expect(result).toContain(
+      'Supabase pgvector sudah digunakan sebagai production vector search.',
     );
   });
 

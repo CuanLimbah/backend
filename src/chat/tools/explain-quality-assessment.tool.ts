@@ -228,11 +228,21 @@ function formatPricingSection(submission: WasteSubmission): string {
 
 function formatSimilarCasesSection(submission: WasteSubmission): string {
   const lines = ['REFERENSI KASUS HISTORIS MIRIP'];
+  const provider = submission.ai_multimodal_rag_provider;
 
   if (submission.ai_multimodal_rag_used === true) {
     lines.push(
       '- AI juga membandingkan setoran ini dengan kasus historis yang mirip dari quality case dataset.',
     );
+    if (provider === 'supabase_pgvector') {
+      lines.push('- Kasus historis mirip diambil melalui Supabase pgvector.');
+    } else if (provider === 'application_cosine') {
+      lines.push(
+        '- Kasus historis mirip diambil melalui fallback application-level cosine similarity.',
+      );
+    } else {
+      lines.push(`- Provider retrieval: ${provider ?? 'belum tercatat'}.`);
+    }
     lines.push(
       `- Jumlah kasus mirip: ${submission.ai_similar_case_count ?? 0}`,
     );
@@ -248,11 +258,17 @@ function formatSimilarCasesSection(submission: WasteSubmission): string {
           : 'belum tersedia'
       }`,
     );
-  } else if (submission.ai_multimodal_rag_source === 'embedding_unavailable') {
+  } else if (
+    submission.ai_multimodal_rag_source === 'embedding_unavailable' ||
+    provider === 'embedding_unavailable'
+  ) {
     lines.push(
-      '- Multimodal RAG belum digunakan karena embedding visual-text dari observasi visual belum tersedia.',
+      '- Multimodal RAG belum digunakan karena embedding visual-text belum tersedia.',
     );
-  } else if (submission.ai_multimodal_rag_source === 'none') {
+  } else if (
+    submission.ai_multimodal_rag_source === 'none' ||
+    provider === 'fallback_none'
+  ) {
     lines.push('- Tidak ditemukan kasus historis yang cukup mirip.');
   } else {
     lines.push('- Informasi Multimodal RAG belum tercatat untuk setoran ini.');

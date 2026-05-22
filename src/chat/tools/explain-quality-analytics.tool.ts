@@ -187,6 +187,16 @@ function getMultimodalRagInterpretation(
       '- Banyak AI Quality Check belum menemukan kasus historis mirip. Dataset eligible atau embedding coverage perlu ditingkatkan.',
     );
   }
+  if ((multimodal.providerUsage?.application_cosine ?? 0) > 0) {
+    notes.push(
+      '- Sebagian retrieval masih memakai fallback application-level cosine similarity.',
+    );
+  }
+  if ((multimodal.providerUsage?.supabase_pgvector ?? 0) > 0) {
+    notes.push(
+      '- Supabase pgvector sudah digunakan sebagai production vector search.',
+    );
+  }
 
   return notes.length
     ? notes.join('\n')
@@ -382,6 +392,16 @@ function getActionRecommendations(analytics: QualityAiAnalytics): string {
       '- Pertahankan retrieval kasus historis sebagai konteks tambahan, tetapi admin tetap harus validasi akhir.',
     );
   }
+  if ((analytics.multimodalRag.providerUsage?.application_cosine ?? 0) > 0) {
+    recommendations.push(
+      '- Supabase vector search belum dominan. Periksa Supabase vector sync coverage dan RPC.',
+    );
+  }
+  if ((analytics.multimodalRag.providerUsage?.supabase_pgvector ?? 0) > 0) {
+    recommendations.push(
+      '- Production vector search sudah aktif sebagai retrieval utama.',
+    );
+  }
   if (
     analytics.multimodalRag.adminDecisionCountWhenUsed > 0 &&
     analytics.multimodalRag.adminDecisionCountWhenNotUsed > 0 &&
@@ -479,6 +499,21 @@ function buildExplanation(
     )}`,
     `- Confidence saat tidak digunakan: ${formatPercent(
       analytics.multimodalRag.averageConfidenceWhenNotUsed,
+    )}`,
+    `- Provider Supabase pgvector: ${formatNumber(
+      analytics.multimodalRag.providerUsage?.supabase_pgvector,
+    )}`,
+    `- Provider application cosine fallback: ${formatNumber(
+      analytics.multimodalRag.providerUsage?.application_cosine,
+    )}`,
+    `- Provider fallback none: ${formatNumber(
+      analytics.multimodalRag.providerUsage?.fallback_none,
+    )}`,
+    `- Provider embedding unavailable: ${formatNumber(
+      analytics.multimodalRag.providerUsage?.embedding_unavailable,
+    )}`,
+    `- Provider unknown: ${formatNumber(
+      analytics.multimodalRag.providerUsage?.unknown,
     )}`,
     '',
     'INTERPRETASI MULTIMODAL RAG',

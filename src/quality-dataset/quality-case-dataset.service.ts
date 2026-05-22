@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
 import { Model } from 'mongoose';
@@ -9,12 +9,14 @@ import type {
   QualityFeedback,
   QualityFeedbackTag,
   QualityGrade,
+  QualityVectorProvider,
   WasteSubmission,
   WasteType,
 } from '../common/models';
 import { QualityCaseDatasetEntity } from '../database/schemas/quality-case-dataset.schema';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
 import { ImageEmbeddingService } from './image-embedding.service';
+import { SupabaseQualityVectorService } from './supabase-quality-vector.service';
 
 type ReadinessFilters = {
   wasteType?: WasteType;
@@ -37,11 +39,18 @@ export type SimilarQualityCase = {
   ai_quality_grade?: QualityGrade;
   ai_quality_confidence?: number;
   ai_visual_observations?: QualityCaseDatasetRecord['ai_visual_observations'];
+  visual_observation_text?: string;
   quality_feedback?: QualityFeedback;
   override_primary_reason?: QualityFeedbackTag;
   ai_error_pattern?: string;
   similarity: number;
   created_at: string;
+};
+
+export type SimilarQualityCaseSearchResult = {
+  cases: SimilarQualityCase[];
+  provider: QualityVectorProvider;
+  fallbackUsed: boolean;
 };
 
 const gradeRank: Record<QualityGrade, number> = {
@@ -52,12 +61,16 @@ const gradeRank: Record<QualityGrade, number> = {
 
 @Injectable()
 export class QualityCaseDatasetService {
+  private readonly logger = new Logger(QualityCaseDatasetService.name);
+
   constructor(
     @InjectModel(QualityCaseDatasetEntity.name)
     private readonly qualityCaseDatasetModel: Model<QualityCaseDatasetEntity>,
     @InjectModel(WasteSubmissionEntity.name)
     private readonly submissionModel: Model<WasteSubmissionEntity>,
     private readonly imageEmbeddingService: ImageEmbeddingService,
+    @Optional()
+    private readonly supabaseQualityVectorService?: SupabaseQualityVectorService,
   ) {}
 
   async upsertFromSubmission(submission: WasteSubmission): Promise<void> {
@@ -92,6 +105,7 @@ export class QualityCaseDatasetService {
       ai_similar_case_top_score: submission.ai_similar_case_top_score,
       ai_multimodal_rag_used: submission.ai_multimodal_rag_used,
       ai_multimodal_rag_source: submission.ai_multimodal_rag_source,
+      ai_multimodal_rag_provider: submission.ai_multimodal_rag_provider,
       ai_multimodal_rag_model: submission.ai_multimodal_rag_model,
       actual_weight: submission.actual_weight,
       price_snapshot_per_kg: submission.price_snapshot_per_kg,
@@ -105,7 +119,7 @@ export class QualityCaseDatasetService {
 
     const { id: recordId, ...mutableRecord } = record;
 
-    await this.qualityCaseDatasetModel
+    const updatedCase = (await this.qualityCaseDatasetModel
       .findOneAndUpdate(
         { submission_id: submission.id },
         {
@@ -114,7 +128,20 @@ export class QualityCaseDatasetService {
         },
         { upsert: true, new: true },
       )
-      .exec();
+      .exec()) as QualityCaseDatasetRecord | null;
+
+    if (
+      updatedCase?.eligibility_status === 'eligible' &&
+      this.supabaseQualityVectorService
+    ) {
+      try {
+        await this.supabaseQualityVectorService.upsertCaseVector(updatedCase);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to sync quality case vector: ${String(error)}`,
+        );
+      }
+    }
   }
 
   async backfillFromCompletedSubmissions(): Promise<{
@@ -290,6 +317,51 @@ export class QualityCaseDatasetService {
     limit?: number;
     minSimilarity?: number;
   }): Promise<SimilarQualityCase[]> {
+    const result = await this.findSimilarCasesWithProvider(input);
+    return result.cases;
+  }
+
+  async findSimilarCasesWithProvider(input: {
+    wasteType: WasteType;
+    embedding: number[];
+    excludeSubmissionId?: string;
+    limit?: number;
+    minSimilarity?: number;
+    provider?: 'supabase_pgvector' | 'application_cosine' | 'auto';
+  }): Promise<SimilarQualityCaseSearchResult> {
+    if (!input.embedding.length) {
+      return { cases: [], provider: 'embedding_unavailable', fallbackUsed: false };
+    }
+
+    if (input.provider !== 'application_cosine') {
+      const supabaseCases = this.supabaseQualityVectorService
+        ? await this.supabaseQualityVectorService.findSimilarCases(input)
+        : [];
+
+      if (supabaseCases.length > 0 || input.provider === 'supabase_pgvector') {
+        return {
+          cases: supabaseCases,
+          provider: supabaseCases.length ? 'supabase_pgvector' : 'fallback_none',
+          fallbackUsed: false,
+        };
+      }
+    }
+
+    const cases = await this.findSimilarCasesWithApplicationCosine(input);
+    return {
+      cases,
+      provider: cases.length ? 'application_cosine' : 'fallback_none',
+      fallbackUsed: input.provider !== 'application_cosine',
+    };
+  }
+
+  private async findSimilarCasesWithApplicationCosine(input: {
+    wasteType: WasteType;
+    embedding: number[];
+    excludeSubmissionId?: string;
+    limit?: number;
+    minSimilarity?: number;
+  }): Promise<SimilarQualityCase[]> {
     const limit = Math.min(Math.max(Number(input.limit) || 5, 1), 20);
     const minSimilarity = input.minSimilarity ?? 0.7;
     const query: Record<string, unknown> = {
@@ -319,6 +391,7 @@ export class QualityCaseDatasetService {
         ai_quality_grade: item.ai_quality_grade,
         ai_quality_confidence: item.ai_quality_confidence,
         ai_visual_observations: item.ai_visual_observations,
+        visual_observation_text: item.ai_visual_observations?.visualObservation,
         quality_feedback: item.quality_feedback,
         override_primary_reason: item.override_primary_reason,
         ai_error_pattern: item.ai_error_pattern,
@@ -351,8 +424,8 @@ export class QualityCaseDatasetService {
           item.ai_error_pattern
             ? `   - Pola error AI: ${item.ai_error_pattern}`
             : undefined,
-          item.ai_visual_observations?.visualObservation
-            ? `   - Observasi visual: ${item.ai_visual_observations.visualObservation}`
+          item.ai_visual_observations?.visualObservation || item.visual_observation_text
+            ? `   - Observasi visual: ${item.ai_visual_observations?.visualObservation ?? item.visual_observation_text}`
             : undefined,
         ]
           .filter(Boolean)
@@ -405,6 +478,87 @@ export class QualityCaseDatasetService {
     });
   }
 
+  async getSimilarCasesForSubmissionWithProvider(
+    submissionId: string,
+    options: {
+      limit?: number;
+      minSimilarity?: number;
+      provider?: 'supabase_pgvector' | 'application_cosine' | 'auto';
+    } = {},
+  ): Promise<SimilarQualityCaseSearchResult> {
+    let qualityCase = (await this.qualityCaseDatasetModel
+      .findOne({ submission_id: submissionId })
+      .lean()
+      .exec()) as QualityCaseDatasetRecord | null;
+
+    if (!qualityCase) {
+      throw new NotFoundException(
+        `Quality dataset case for submission "${submissionId}" not found`,
+      );
+    }
+
+    if (!qualityCase.image_embedding?.length) {
+      const result = await this.generateEmbeddingForCase(submissionId);
+
+      if (result.status !== 'ready') {
+        throw new NotFoundException(
+          result.reason ?? 'Embedding belum tersedia untuk kasus ini',
+        );
+      }
+
+      qualityCase = (await this.qualityCaseDatasetModel
+        .findOne({ submission_id: submissionId })
+        .lean()
+        .exec()) as QualityCaseDatasetRecord | null;
+    }
+
+    if (!qualityCase?.image_embedding?.length) {
+      throw new NotFoundException('Embedding belum tersedia untuk kasus ini');
+    }
+
+    return this.findSimilarCasesWithProvider({
+      wasteType: qualityCase.waste_type,
+      embedding: qualityCase.image_embedding,
+      excludeSubmissionId: submissionId,
+      limit: options.limit,
+      minSimilarity: options.minSimilarity,
+      provider: options.provider ?? 'auto',
+    });
+  }
+
+  syncCaseVectorToSupabase(submissionId: string) {
+    return (
+      this.supabaseQualityVectorService?.syncCaseBySubmissionId(submissionId) ?? {
+        submissionId,
+        status: 'skipped' as const,
+        reason: 'Supabase pgvector service is not configured',
+      }
+    );
+  }
+
+  backfillSupabaseVectors(options: { limit?: number; force?: boolean } = {}) {
+    return this.supabaseQualityVectorService?.backfillCaseVectors(options) ?? {
+      scanned: 0,
+      synced: 0,
+      skipped: 0,
+      failed: 0,
+    };
+  }
+
+  getVectorSyncStatus() {
+    return (
+      this.supabaseQualityVectorService?.getVectorSyncStatus() ?? {
+        provider: 'supabase_pgvector' as const,
+        enabled: false,
+        totalEligibleCases: 0,
+        syncedCases: 0,
+        unsyncedCases: 0,
+        failedSyncCases: 0,
+        syncCoverageRate: 0,
+      }
+    );
+  }
+
   async getReadinessAnalytics(
     filters: ReadinessFilters = {},
   ): Promise<QualityDatasetReadinessAnalytics> {
@@ -441,6 +595,7 @@ export class QualityCaseDatasetService {
       feedbackTagCounts: this.countFeedbackTags(cases),
       aiErrorPatterns: this.countBy(cases, 'ai_error_pattern'),
       embeddingCoverage: this.buildEmbeddingCoverage(eligibleCases),
+      supabaseVectorCoverage: this.buildSupabaseVectorCoverage(eligibleCases),
       recentEligibleCases: eligibleCases
         .slice()
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -650,6 +805,27 @@ export class QualityCaseDatasetService {
       embeddedCases,
       missingEmbeddingCases: eligibleCases.length - embeddedCases,
       embeddingCoverageRate: this.safeRatio(embeddedCases, eligibleCases.length),
+    };
+  }
+
+  private buildSupabaseVectorCoverage(
+    eligibleCases: QualityCaseDatasetRecord[],
+  ): QualityDatasetReadinessAnalytics['supabaseVectorCoverage'] {
+    const syncedCases = eligibleCases.filter(
+      (item) =>
+        item.supabase_vector_synced === true &&
+        item.supabase_vector_sync_status === 'synced',
+    ).length;
+    const failedSyncCases = eligibleCases.filter(
+      (item) => item.supabase_vector_sync_status === 'failed',
+    ).length;
+
+    return {
+      totalEligibleCases: eligibleCases.length,
+      syncedCases,
+      unsyncedCases: eligibleCases.length - syncedCases,
+      failedSyncCases,
+      syncCoverageRate: this.safeRatio(syncedCases, eligibleCases.length),
     };
   }
 

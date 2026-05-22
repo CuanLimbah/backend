@@ -12,6 +12,8 @@ import type {
   QualityFeedbackTag,
   QualityGrade,
   QualityGradeSource,
+  QualityVectorProvider,
+  QualityVectorSyncStatus,
   VisionAssessmentSource,
   WasteType,
 } from '../../common/models';
@@ -131,6 +133,38 @@ export class QualityCaseDatasetEntity implements QualityCaseDatasetRecord {
   @Prop({ type: Boolean, index: true })
   similarity_search_ready?: boolean;
 
+  @Prop({ type: Boolean, index: true })
+  supabase_vector_synced?: boolean;
+
+  @Prop({ type: String, index: true })
+  supabase_vector_synced_at?: string;
+
+  @Prop({ type: String })
+  supabase_vector_id?: string;
+
+  @Prop({
+    type: String,
+    enum: ['pending', 'synced', 'failed', 'skipped'] satisfies QualityVectorSyncStatus[],
+    index: true,
+  })
+  supabase_vector_sync_status?: QualityVectorSyncStatus;
+
+  @Prop({ type: String })
+  supabase_vector_sync_error?: string;
+
+  @Prop({ type: String })
+  supabase_vector_embedding_model?: string;
+
+  @Prop({
+    type: String,
+    enum: [
+      'image_embedding_model',
+      'visual_text_embedding',
+      'fallback_visual_text',
+    ] satisfies ImageEmbeddingSource[],
+  })
+  supabase_vector_embedding_source?: ImageEmbeddingSource;
+
   @Prop({ type: [String], default: undefined })
   ai_similar_case_ids?: string[];
 
@@ -152,6 +186,17 @@ export class QualityCaseDatasetEntity implements QualityCaseDatasetRecord {
     ] satisfies MultimodalRagSource[],
   })
   ai_multimodal_rag_source?: MultimodalRagSource;
+
+  @Prop({
+    type: String,
+    enum: [
+      'application_cosine',
+      'supabase_pgvector',
+      'fallback_none',
+      'embedding_unavailable',
+    ] satisfies QualityVectorProvider[],
+  })
+  ai_multimodal_rag_provider?: QualityVectorProvider;
 
   @Prop({ type: String })
   ai_multimodal_rag_model?: string;
@@ -204,6 +249,12 @@ QualityCaseDatasetSchema.index({ ai_visual_source: 1 });
 QualityCaseDatasetSchema.index({ ai_quality_rag_source: 1 });
 QualityCaseDatasetSchema.index({ override_primary_reason: 1 });
 QualityCaseDatasetSchema.index({ image_embedding_status: 1 });
+QualityCaseDatasetSchema.index({ supabase_vector_sync_status: 1 });
+QualityCaseDatasetSchema.index({
+  supabase_vector_synced: 1,
+  eligibility_status: 1,
+});
+QualityCaseDatasetSchema.index({ supabase_vector_synced_at: -1 });
 QualityCaseDatasetSchema.index({
   similarity_search_ready: 1,
   waste_type: 1,
