@@ -21,6 +21,12 @@ const baseAnalytics: QualityDatasetReadinessAnalytics = {
   ragSourceUsage: { rag: 7, fallback_sop: 3 },
   feedbackTagCounts: { photo_unclear: 1 },
   aiErrorPatterns: { ai_too_optimistic: 1 },
+  embeddingCoverage: {
+    totalEligibleCases: 8,
+    embeddedCases: 6,
+    missingEmbeddingCases: 2,
+    embeddingCoverageRate: 0.75,
+  },
   recentEligibleCases: [],
 };
 
@@ -79,6 +85,8 @@ describe('explain_quality_dataset_readiness tool', () => {
     });
     expect(result).toContain('RINGKASAN QUALITY DATASET READINESS');
     expect(result).toContain('Dataset cukup siap untuk tahap Multimodal RAG MVP.');
+    expect(result).toContain('EMBEDDING COVERAGE');
+    expect(result).toContain('Embedded cases: 6');
   });
 
   it('returns not-ready interpretation for low eligibility rate', async () => {
@@ -108,5 +116,20 @@ describe('explain_quality_dataset_readiness tool', () => {
     );
 
     expect(result).toBe('Belum ada quality case dataset yang bisa dianalisis.');
+  });
+
+  it('recommends embedding backfill when embeddings are missing', async () => {
+    const service = createService(baseAnalytics);
+    setQualityCaseDatasetService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain('Embedding coverage sebagian siap.');
+    expect(result).toContain(
+      'Jalankan backfill embedding untuk eligible quality cases.',
+    );
   });
 });

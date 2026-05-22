@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import type {
   AiVisualObservations,
   ContaminationLevel,
+  MultimodalRagSource,
   QualityAssessmentSource,
   QualityAuditEventType,
   QualityAuditLog,
@@ -84,6 +85,21 @@ export class QualityAuditLogEntity implements QualityAuditLog {
 
   @Prop({ type: Object })
   ai_visual_observations?: AiVisualObservations;
+
+  @Prop({ type: Boolean })
+  ai_multimodal_rag_used?: boolean;
+
+  @Prop({ type: String })
+  ai_multimodal_rag_source?: MultimodalRagSource;
+
+  @Prop({ type: [String], default: undefined })
+  ai_similar_case_ids?: string[];
+
+  @Prop({ type: Number })
+  ai_similar_case_count?: number;
+
+  @Prop({ type: Number })
+  ai_similar_case_top_score?: number;
 
   @Prop({ type: String, enum: ['A', 'B', 'C'] satisfies QualityGrade[] })
   final_quality_grade?: QualityGrade;

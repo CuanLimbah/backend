@@ -2,6 +2,9 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import type {
   AiVisualObservations,
   ContaminationLevel,
+  ImageEmbeddingSource,
+  ImageEmbeddingStatus,
+  MultimodalRagSource,
   QualityCaseDatasetRecord,
   QualityCaseEligibilityStatus,
   QualityFeedback,
@@ -96,6 +99,63 @@ export class QualityCaseDatasetEntity implements QualityCaseDatasetRecord {
   @Prop({ type: Boolean, required: true })
   is_overridden: boolean;
 
+  @Prop({ type: [Number], default: undefined })
+  image_embedding?: number[];
+
+  @Prop({ type: String })
+  image_embedding_model?: string;
+
+  @Prop({
+    type: String,
+    enum: [
+      'image_embedding_model',
+      'visual_text_embedding',
+      'fallback_visual_text',
+    ] satisfies ImageEmbeddingSource[],
+  })
+  image_embedding_source?: ImageEmbeddingSource;
+
+  @Prop({ type: String })
+  image_embedding_generated_at?: string;
+
+  @Prop({
+    type: String,
+    enum: ['pending', 'ready', 'failed', 'skipped'] satisfies ImageEmbeddingStatus[],
+    index: true,
+  })
+  image_embedding_status?: ImageEmbeddingStatus;
+
+  @Prop({ type: String })
+  image_embedding_error?: string;
+
+  @Prop({ type: Boolean, index: true })
+  similarity_search_ready?: boolean;
+
+  @Prop({ type: [String], default: undefined })
+  ai_similar_case_ids?: string[];
+
+  @Prop({ type: Number })
+  ai_similar_case_count?: number;
+
+  @Prop({ type: Number })
+  ai_similar_case_top_score?: number;
+
+  @Prop({ type: Boolean })
+  ai_multimodal_rag_used?: boolean;
+
+  @Prop({
+    type: String,
+    enum: [
+      'similar_quality_cases',
+      'none',
+      'embedding_unavailable',
+    ] satisfies MultimodalRagSource[],
+  })
+  ai_multimodal_rag_source?: MultimodalRagSource;
+
+  @Prop({ type: String })
+  ai_multimodal_rag_model?: string;
+
   @Prop({ type: Number })
   actual_weight?: number;
 
@@ -143,3 +203,9 @@ QualityCaseDatasetSchema.index({ eligibility_status: 1, created_at: -1 });
 QualityCaseDatasetSchema.index({ ai_visual_source: 1 });
 QualityCaseDatasetSchema.index({ ai_quality_rag_source: 1 });
 QualityCaseDatasetSchema.index({ override_primary_reason: 1 });
+QualityCaseDatasetSchema.index({ image_embedding_status: 1 });
+QualityCaseDatasetSchema.index({
+  similarity_search_ready: 1,
+  waste_type: 1,
+  final_quality_grade: 1,
+});

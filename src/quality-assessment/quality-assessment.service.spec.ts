@@ -14,6 +14,8 @@ describe('QualityAssessmentService', () => {
     submission?: Record<string, unknown> | null;
     ragSource?: 'rag' | 'fallback_sop';
     visualObservation?: Record<string, unknown>;
+    embeddingResult?: Record<string, unknown> | null;
+    similarCases?: Array<Record<string, unknown>>;
   }) {
     const submission =
       overrides?.submission === null
@@ -72,6 +74,15 @@ describe('QualityAssessmentService', () => {
     };
     const qualityCaseDatasetService = {
       upsertFromSubmission: jest.fn().mockResolvedValue(undefined),
+      findSimilarCases: jest.fn().mockResolvedValue(overrides?.similarCases ?? []),
+      buildSimilarCasesContext: jest
+        .fn()
+        .mockReturnValue('KASUS HISTORIS MIRIP:\n1. Submission sub-old'),
+    };
+    const imageEmbeddingService = {
+      generateForQualityCase: jest
+        .fn()
+        .mockResolvedValue(overrides?.embeddingResult ?? null),
     };
     const service = new QualityAssessmentService(
       submissionModel as any,
@@ -79,6 +90,7 @@ describe('QualityAssessmentService', () => {
       qualityVisionService as any,
       qualityAuditLogService as any,
       qualityCaseDatasetService as any,
+      imageEmbeddingService as any,
       config as any,
     );
 
@@ -89,6 +101,7 @@ describe('QualityAssessmentService', () => {
       qualityVisionService,
       qualityAuditLogService,
       qualityCaseDatasetService,
+      imageEmbeddingService,
     };
   }
 
@@ -346,5 +359,101 @@ describe('QualityAssessmentService', () => {
 
     expect(result.recommendedGrade).toBe('C');
     expect(result.contaminationLevel).toBe('high');
+  });
+
+  it('quality check still works when embedding retrieval fails', async () => {
+    const { service, imageEmbeddingService, submissionModel } = createService();
+    imageEmbeddingService.generateForQualityCase.mockRejectedValue(
+      new Error('embedding down'),
+    );
+
+    const result = await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Minyak agak keruh dengan sedikit endapan.',
+    });
+
+    expect(result.recommendedGrade).toBe('B');
+    expect(submissionModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { id: 'sub-1' },
+      expect.objectContaining({
+        ai_multimodal_rag_used: false,
+        ai_multimodal_rag_source: 'embedding_unavailable',
+      }),
+      { new: true },
+    );
+  });
+
+  it('stores multimodal RAG metadata when similar cases are available', async () => {
+    const { service, qualityCaseDatasetService, submissionModel } = createService({
+      embeddingResult: {
+        embedding: [1, 0],
+        model: 'test-embedding-model',
+        source: 'visual_text_embedding',
+      },
+      similarCases: [
+        {
+          submission_id: 'sub-old',
+          waste_type: 'oil',
+          final_quality_grade: 'B',
+          similarity: 0.86,
+          created_at: '2026-05-20T00:00:00.000Z',
+        },
+      ],
+    });
+
+    await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Minyak agak keruh dengan sedikit endapan.',
+    });
+
+    expect(qualityCaseDatasetService.findSimilarCases).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wasteType: 'oil',
+        embedding: [1, 0],
+        excludeSubmissionId: 'sub-1',
+      }),
+    );
+    expect(qualityCaseDatasetService.buildSimilarCasesContext).toHaveBeenCalled();
+    expect(submissionModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { id: 'sub-1' },
+      expect.objectContaining({
+        ai_multimodal_rag_used: true,
+        ai_multimodal_rag_source: 'similar_quality_cases',
+        ai_multimodal_rag_model: 'test-embedding-model',
+        ai_similar_case_ids: ['sub-old'],
+        ai_similar_case_count: 1,
+        ai_similar_case_top_score: 0.86,
+      }),
+      { new: true },
+    );
+  });
+
+  it('stores none source when embedding works but no similar cases are found', async () => {
+    const { service, submissionModel } = createService({
+      embeddingResult: {
+        embedding: [1, 0],
+        model: 'test-embedding-model',
+        source: 'visual_text_embedding',
+      },
+      similarCases: [],
+    });
+
+    await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Minyak agak keruh dengan sedikit endapan.',
+    });
+
+    expect(submissionModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { id: 'sub-1' },
+      expect.objectContaining({
+        ai_multimodal_rag_used: false,
+        ai_multimodal_rag_source: 'none',
+        ai_multimodal_rag_model: 'test-embedding-model',
+      }),
+      { new: true },
+    );
   });
 });

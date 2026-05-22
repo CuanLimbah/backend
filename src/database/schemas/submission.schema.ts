@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import type {
   ContaminationLevel,
   AiVisualObservations,
+  MultimodalRagSource,
   QualityAssessmentSource,
   QualityFeedback,
   QualityFeedbackSeverity,
@@ -130,6 +131,31 @@ export class WasteSubmissionEntity implements WasteSubmission {
     enum: ['vision_llm', 'fallback'] satisfies VisionAssessmentSource[],
   })
   ai_visual_source?: VisionAssessmentSource;
+
+  @Prop({ type: [String], default: undefined })
+  ai_similar_case_ids?: string[];
+
+  @Prop()
+  ai_similar_case_count?: number;
+
+  @Prop()
+  ai_similar_case_top_score?: number;
+
+  @Prop()
+  ai_multimodal_rag_used?: boolean;
+
+  @Prop({
+    type: String,
+    enum: [
+      'similar_quality_cases',
+      'none',
+      'embedding_unavailable',
+    ] satisfies MultimodalRagSource[],
+  })
+  ai_multimodal_rag_source?: MultimodalRagSource;
+
+  @Prop()
+  ai_multimodal_rag_model?: string;
 
   @Prop({ type: String, enum: ['ai', 'admin'] satisfies QualityGradeSource[] })
   quality_grade_source?: QualityGradeSource;

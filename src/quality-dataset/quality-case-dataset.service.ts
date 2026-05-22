@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
 import { Model } from 'mongoose';
@@ -6,12 +6,15 @@ import type {
   QualityCaseDatasetRecord,
   QualityCaseEligibilityStatus,
   QualityDatasetReadinessAnalytics,
+  QualityFeedback,
+  QualityFeedbackTag,
   QualityGrade,
   WasteSubmission,
   WasteType,
 } from '../common/models';
 import { QualityCaseDatasetEntity } from '../database/schemas/quality-case-dataset.schema';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
+import { ImageEmbeddingService } from './image-embedding.service';
 
 type ReadinessFilters = {
   wasteType?: WasteType;
@@ -24,6 +27,21 @@ type ListCaseFilters = {
   wasteType?: WasteType;
   finalGrade?: QualityGrade;
   limit?: number;
+};
+
+export type SimilarQualityCase = {
+  submission_id: string;
+  waste_type: WasteType;
+  image_url?: string;
+  final_quality_grade?: QualityGrade;
+  ai_quality_grade?: QualityGrade;
+  ai_quality_confidence?: number;
+  ai_visual_observations?: QualityCaseDatasetRecord['ai_visual_observations'];
+  quality_feedback?: QualityFeedback;
+  override_primary_reason?: QualityFeedbackTag;
+  ai_error_pattern?: string;
+  similarity: number;
+  created_at: string;
 };
 
 const gradeRank: Record<QualityGrade, number> = {
@@ -39,6 +57,7 @@ export class QualityCaseDatasetService {
     private readonly qualityCaseDatasetModel: Model<QualityCaseDatasetEntity>,
     @InjectModel(WasteSubmissionEntity.name)
     private readonly submissionModel: Model<WasteSubmissionEntity>,
+    private readonly imageEmbeddingService: ImageEmbeddingService,
   ) {}
 
   async upsertFromSubmission(submission: WasteSubmission): Promise<void> {
@@ -68,6 +87,12 @@ export class QualityCaseDatasetService {
       override_feedback_severity: submission.override_feedback_severity,
       ai_error_pattern: this.classifyAiErrorPattern(submission, isOverridden),
       is_overridden: isOverridden,
+      ai_similar_case_ids: submission.ai_similar_case_ids,
+      ai_similar_case_count: submission.ai_similar_case_count,
+      ai_similar_case_top_score: submission.ai_similar_case_top_score,
+      ai_multimodal_rag_used: submission.ai_multimodal_rag_used,
+      ai_multimodal_rag_source: submission.ai_multimodal_rag_source,
+      ai_multimodal_rag_model: submission.ai_multimodal_rag_model,
       actual_weight: submission.actual_weight,
       price_snapshot_per_kg: submission.price_snapshot_per_kg,
       final_price_per_kg: submission.final_price_per_kg,
@@ -121,6 +146,265 @@ export class QualityCaseDatasetService {
     };
   }
 
+  async generateEmbeddingForCase(submissionId: string): Promise<{
+    submissionId: string;
+    status: 'ready' | 'failed' | 'skipped';
+    reason?: string;
+  }> {
+    const qualityCase = (await this.qualityCaseDatasetModel
+      .findOne({ submission_id: submissionId })
+      .lean()
+      .exec()) as QualityCaseDatasetRecord | null;
+
+    if (!qualityCase) {
+      throw new NotFoundException(
+        `Quality dataset case for submission "${submissionId}" not found`,
+      );
+    }
+
+    if (qualityCase.eligibility_status !== 'eligible') {
+      await this.qualityCaseDatasetModel
+        .findOneAndUpdate(
+          { submission_id: submissionId },
+          {
+            $set: {
+              image_embedding_status: 'skipped',
+              image_embedding_error: 'Case is not eligible for embedding',
+              similarity_search_ready: false,
+              updated_at: new Date().toISOString(),
+            },
+          },
+        )
+        .exec();
+
+      return {
+        submissionId,
+        status: 'skipped',
+        reason: 'Case is not eligible for embedding',
+      };
+    }
+
+    const result = await this.imageEmbeddingService.generateForQualityCase({
+      imageUrl: qualityCase.image_url,
+      visualObservation: qualityCase.ai_visual_observations,
+      wasteType: qualityCase.waste_type,
+    });
+
+    if (!result) {
+      await this.qualityCaseDatasetModel
+        .findOneAndUpdate(
+          { submission_id: submissionId },
+          {
+            $set: {
+              image_embedding_status: 'failed',
+              image_embedding_error:
+                'Embedding provider unavailable or insufficient data',
+              similarity_search_ready: false,
+              updated_at: new Date().toISOString(),
+            },
+          },
+        )
+        .exec();
+
+      return {
+        submissionId,
+        status: 'failed',
+        reason: 'Embedding provider unavailable or insufficient data',
+      };
+    }
+
+    await this.qualityCaseDatasetModel
+      .findOneAndUpdate(
+        { submission_id: submissionId },
+        {
+          $set: {
+            image_embedding: result.embedding,
+            image_embedding_model: result.model,
+            image_embedding_source: result.source,
+            image_embedding_generated_at: new Date().toISOString(),
+            image_embedding_status: 'ready',
+            similarity_search_ready: true,
+            updated_at: new Date().toISOString(),
+          },
+          $unset: { image_embedding_error: '' },
+        },
+      )
+      .exec();
+
+    return { submissionId, status: 'ready' };
+  }
+
+  async backfillEmbeddingsForEligibleCases(
+    options: { limit?: number; force?: boolean } = {},
+  ): Promise<{
+    scanned: number;
+    embedded: number;
+    skipped: number;
+    failed: number;
+  }> {
+    const limit = Math.min(Math.max(Number(options.limit) || 50, 1), 500);
+    const query: Record<string, unknown> = {
+      eligibility_status: 'eligible',
+    };
+
+    if (!options.force) {
+      query.image_embedding_status = { $ne: 'ready' };
+    }
+
+    const cases = (await this.qualityCaseDatasetModel
+      .find(query)
+      .sort({ created_at: -1 })
+      .limit(limit)
+      .lean()
+      .exec()) as QualityCaseDatasetRecord[];
+
+    let embedded = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const qualityCase of cases) {
+      try {
+        const result = await this.generateEmbeddingForCase(
+          qualityCase.submission_id,
+        );
+        if (result.status === 'ready') embedded += 1;
+        if (result.status === 'skipped') skipped += 1;
+        if (result.status === 'failed') failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    return {
+      scanned: cases.length,
+      embedded,
+      skipped,
+      failed,
+    };
+  }
+
+  async findSimilarCases(input: {
+    wasteType: WasteType;
+    embedding: number[];
+    excludeSubmissionId?: string;
+    limit?: number;
+    minSimilarity?: number;
+  }): Promise<SimilarQualityCase[]> {
+    const limit = Math.min(Math.max(Number(input.limit) || 5, 1), 20);
+    const minSimilarity = input.minSimilarity ?? 0.7;
+    const query: Record<string, unknown> = {
+      eligibility_status: 'eligible',
+      similarity_search_ready: true,
+      image_embedding_status: 'ready',
+      waste_type: input.wasteType,
+    };
+
+    if (input.excludeSubmissionId) {
+      query.submission_id = { $ne: input.excludeSubmissionId };
+    }
+
+    const candidates = (await this.qualityCaseDatasetModel
+      .find(query)
+      .sort({ created_at: -1 })
+      .limit(500)
+      .lean()
+      .exec()) as QualityCaseDatasetRecord[];
+
+    return candidates
+      .map((item) => ({
+        submission_id: item.submission_id,
+        waste_type: item.waste_type,
+        image_url: item.image_url,
+        final_quality_grade: item.final_quality_grade,
+        ai_quality_grade: item.ai_quality_grade,
+        ai_quality_confidence: item.ai_quality_confidence,
+        ai_visual_observations: item.ai_visual_observations,
+        quality_feedback: item.quality_feedback,
+        override_primary_reason: item.override_primary_reason,
+        ai_error_pattern: item.ai_error_pattern,
+        similarity: this.cosineSimilarity(input.embedding, item.image_embedding ?? []),
+        created_at: item.created_at,
+      }))
+      .filter((item) => item.similarity >= minSimilarity)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
+  }
+
+  buildSimilarCasesContext(cases: SimilarQualityCase[]): string {
+    if (cases.length === 0) return '';
+
+    return [
+      'KASUS HISTORIS MIRIP:',
+      ...cases.slice(0, 5).map((item, index) =>
+        [
+          `${index + 1}. Submission ${item.submission_id}`,
+          `   - Similarity: ${Math.round(item.similarity * 100)}%`,
+          `   - Jenis limbah: ${item.waste_type === 'oil' ? 'minyak jelantah' : 'sisa makanan'}`,
+          `   - Grade final admin: ${item.final_quality_grade ?? 'belum tersedia'}`,
+          `   - Rekomendasi AI sebelumnya: ${item.ai_quality_grade ?? 'belum tersedia'}`,
+          item.quality_feedback?.note
+            ? `   - Catatan admin: ${item.quality_feedback.note}`
+            : undefined,
+          item.override_primary_reason
+            ? `   - Feedback admin: ${item.override_primary_reason}`
+            : undefined,
+          item.ai_error_pattern
+            ? `   - Pola error AI: ${item.ai_error_pattern}`
+            : undefined,
+          item.ai_visual_observations?.visualObservation
+            ? `   - Observasi visual: ${item.ai_visual_observations.visualObservation}`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      ),
+      'Catatan: kasus historis hanya referensi tambahan. Grade final tetap ditentukan admin.',
+    ].join('\n');
+  }
+
+  async getSimilarCasesForSubmission(
+    submissionId: string,
+    options: { limit?: number; minSimilarity?: number } = {},
+  ): Promise<SimilarQualityCase[]> {
+    let qualityCase = (await this.qualityCaseDatasetModel
+      .findOne({ submission_id: submissionId })
+      .lean()
+      .exec()) as QualityCaseDatasetRecord | null;
+
+    if (!qualityCase) {
+      throw new NotFoundException(
+        `Quality dataset case for submission "${submissionId}" not found`,
+      );
+    }
+
+    if (!qualityCase.image_embedding?.length) {
+      const result = await this.generateEmbeddingForCase(submissionId);
+
+      if (result.status !== 'ready') {
+        throw new NotFoundException(
+          result.reason ?? 'Embedding belum tersedia untuk kasus ini',
+        );
+      }
+
+      qualityCase = (await this.qualityCaseDatasetModel
+        .findOne({ submission_id: submissionId })
+        .lean()
+        .exec()) as QualityCaseDatasetRecord | null;
+    }
+
+    if (!qualityCase?.image_embedding?.length) {
+      throw new NotFoundException('Embedding belum tersedia untuk kasus ini');
+    }
+
+    return this.findSimilarCases({
+      wasteType: qualityCase.waste_type,
+      embedding: qualityCase.image_embedding,
+      excludeSubmissionId: submissionId,
+      limit: options.limit,
+      minSimilarity: options.minSimilarity,
+    });
+  }
+
   async getReadinessAnalytics(
     filters: ReadinessFilters = {},
   ): Promise<QualityDatasetReadinessAnalytics> {
@@ -156,6 +440,7 @@ export class QualityCaseDatasetService {
       ragSourceUsage: this.countBy(cases, 'ai_quality_rag_source'),
       feedbackTagCounts: this.countFeedbackTags(cases),
       aiErrorPatterns: this.countBy(cases, 'ai_error_pattern'),
+      embeddingCoverage: this.buildEmbeddingCoverage(eligibleCases),
       recentEligibleCases: eligibleCases
         .slice()
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -347,5 +632,42 @@ export class QualityCaseDatasetService {
       }
       return counts;
     }, {});
+  }
+
+  private buildEmbeddingCoverage(
+    eligibleCases: QualityCaseDatasetRecord[],
+  ): QualityDatasetReadinessAnalytics['embeddingCoverage'] {
+    const embeddedCases = eligibleCases.filter(
+      (item) =>
+        item.image_embedding_status === 'ready' &&
+        item.similarity_search_ready === true &&
+        Array.isArray(item.image_embedding) &&
+        item.image_embedding.length > 0,
+    ).length;
+
+    return {
+      totalEligibleCases: eligibleCases.length,
+      embeddedCases,
+      missingEmbeddingCases: eligibleCases.length - embeddedCases,
+      embeddingCoverageRate: this.safeRatio(embeddedCases, eligibleCases.length),
+    };
+  }
+
+  private cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length || a.length === 0) return 0;
+
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+
+    for (let i = 0; i < a.length; i += 1) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+
+    if (normA === 0 || normB === 0) return 0;
+
+    return Number((dot / (Math.sqrt(normA) * Math.sqrt(normB))).toFixed(4));
   }
 }

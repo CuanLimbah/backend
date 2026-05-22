@@ -307,4 +307,66 @@ describe('explain_quality_assessment tool', () => {
     expect(result).toContain('Harga final per kg: Rp 2.550/kg');
     expect(result).toContain('Total cuan: Rp 25.500');
   });
+
+  it('mentions historical similar cases when multimodal RAG was used', async () => {
+    const model = createModel({
+      ...baseSubmission,
+      ai_multimodal_rag_used: true,
+      ai_multimodal_rag_source: 'similar_quality_cases',
+      ai_similar_case_ids: ['sub-old-1', 'sub-old-2'],
+      ai_similar_case_count: 2,
+      ai_similar_case_top_score: 0.86,
+    });
+    setQualityAssessmentSubmissionModel(model as any);
+
+    const result = await tool?.execute(
+      { submission_id: 'sub-1' },
+      { userId: 'user-1', isAuthenticated: true, role: 'user' },
+    );
+
+    expect(result).toContain('REFERENSI KASUS HISTORIS MIRIP');
+    expect(result).toContain(
+      'AI juga membandingkan setoran ini dengan kasus historis yang mirip',
+    );
+    expect(result).toContain('Jumlah kasus mirip: 2');
+    expect(result).toContain('Top similarity score: 86%');
+    expect(result).toContain('sub-old-1, sub-old-2');
+  });
+
+  it('explains embedding unavailable for multimodal RAG', async () => {
+    const model = createModel({
+      ...baseSubmission,
+      ai_multimodal_rag_used: false,
+      ai_multimodal_rag_source: 'embedding_unavailable',
+    });
+    setQualityAssessmentSubmissionModel(model as any);
+
+    const result = await tool?.execute(
+      { submission_id: 'sub-1' },
+      { userId: 'user-1', isAuthenticated: true, role: 'user' },
+    );
+
+    expect(result).toContain(
+      'Multimodal RAG belum digunakan karena embedding gambar/visual belum tersedia.',
+    );
+  });
+
+  it('explains when no similar cases were found', async () => {
+    const model = createModel({
+      ...baseSubmission,
+      ai_multimodal_rag_used: false,
+      ai_multimodal_rag_source: 'none',
+    });
+    setQualityAssessmentSubmissionModel(model as any);
+
+    const result = await tool?.execute(
+      { submission_id: 'sub-1' },
+      { userId: 'user-1', isAuthenticated: true, role: 'user' },
+    );
+
+    expect(result).toContain('Tidak ditemukan kasus historis yang cukup mirip.');
+    expect(result).toContain(
+      'Kasus historis hanya menjadi referensi tambahan. Grade final tetap ditentukan admin.',
+    );
+  });
 });

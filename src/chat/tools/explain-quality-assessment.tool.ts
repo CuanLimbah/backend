@@ -226,6 +226,44 @@ function formatPricingSection(submission: WasteSubmission): string {
   return lines.join('\n');
 }
 
+function formatSimilarCasesSection(submission: WasteSubmission): string {
+  const lines = ['REFERENSI KASUS HISTORIS MIRIP'];
+
+  if (submission.ai_multimodal_rag_used === true) {
+    lines.push(
+      '- AI juga membandingkan setoran ini dengan kasus historis yang mirip dari quality case dataset.',
+    );
+    lines.push(
+      `- Jumlah kasus mirip: ${submission.ai_similar_case_count ?? 0}`,
+    );
+    lines.push(
+      `- Top similarity score: ${formatPercent(
+        submission.ai_similar_case_top_score,
+      )}`,
+    );
+    lines.push(
+      `- Similar case IDs: ${
+        submission.ai_similar_case_ids?.length
+          ? submission.ai_similar_case_ids.join(', ')
+          : 'belum tersedia'
+      }`,
+    );
+  } else if (submission.ai_multimodal_rag_source === 'embedding_unavailable') {
+    lines.push(
+      '- Multimodal RAG belum digunakan karena embedding gambar/visual belum tersedia.',
+    );
+  } else if (submission.ai_multimodal_rag_source === 'none') {
+    lines.push('- Tidak ditemukan kasus historis yang cukup mirip.');
+  } else {
+    lines.push('- Informasi Multimodal RAG belum tercatat untuk setoran ini.');
+  }
+
+  lines.push(
+    '- Kasus historis hanya menjadi referensi tambahan. Grade final tetap ditentukan admin.',
+  );
+  return lines.join('\n');
+}
+
 function buildExplanation(submission: WasteSubmission): string {
   const visual = submission.ai_visual_observations;
 
@@ -263,6 +301,8 @@ function buildExplanation(submission: WasteSubmission): string {
     formatAdminDecisionSection(submission),
     '',
     formatPricingSection(submission),
+    '',
+    formatSimilarCasesSection(submission),
     '',
     'CATATAN KEAMANAN',
     'AI hanya memberi rekomendasi. Admin tetap menentukan grade final. Sistem tidak boleh mengubah wallet atau transaksi langsung dari hasil AI.',

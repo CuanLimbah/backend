@@ -50,23 +50,35 @@ describe('QualityCaseDatasetService', () => {
   function createService(options?: {
     cases?: Array<Record<string, unknown>>;
     submissions?: Array<Record<string, unknown>>;
+    caseBySubmission?: Record<string, unknown> | null;
+    embeddingResult?: Record<string, unknown> | null;
   }) {
     const findOneAndUpdateQuery = execQuery({});
     const datasetModel = {
       findOneAndUpdate: jest.fn().mockReturnValue(findOneAndUpdateQuery),
       find: jest.fn().mockReturnValue(findQuery(options?.cases ?? [])),
+      findOne: jest
+        .fn()
+        .mockReturnValue(findQuery(options?.caseBySubmission ?? null)),
     };
     const submissionModel = {
       find: jest.fn().mockReturnValue(findQuery(options?.submissions ?? [])),
+    };
+    const imageEmbeddingService = {
+      generateForQualityCase: jest
+        .fn()
+        .mockResolvedValue(options?.embeddingResult ?? null),
     };
 
     return {
       service: new QualityCaseDatasetService(
         datasetModel as any,
         submissionModel as any,
+        imageEmbeddingService as any,
       ),
       datasetModel,
       submissionModel,
+      imageEmbeddingService,
       findOneAndUpdateQuery,
     };
   }
@@ -269,6 +281,12 @@ describe('QualityCaseDatasetService', () => {
       ai_too_optimistic: 1,
       vision_fallback_used: 1,
     });
+    expect(analytics.embeddingCoverage).toEqual({
+      totalEligibleCases: 1,
+      embeddedCases: 0,
+      missingEmbeddingCases: 1,
+      embeddingCoverageRate: 0,
+    });
     expect(analytics.recentEligibleCases).toHaveLength(1);
   });
 
@@ -287,5 +305,179 @@ describe('QualityCaseDatasetService', () => {
       waste_type: 'oil',
       final_quality_grade: 'B',
     });
+  });
+
+  it('marks ineligible case embedding as skipped', async () => {
+    const { service, datasetModel } = createService({
+      caseBySubmission: {
+        ...eligibleSubmission,
+        submission_id: 'sub-1',
+        eligibility_status: 'missing_image',
+      },
+    });
+
+    const result = await service.generateEmbeddingForCase('sub-1');
+
+    expect(result).toEqual({
+      submissionId: 'sub-1',
+      status: 'skipped',
+      reason: 'Case is not eligible for embedding',
+    });
+    expect(datasetModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { submission_id: 'sub-1' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          image_embedding_status: 'skipped',
+          similarity_search_ready: false,
+        }),
+      }),
+    );
+  });
+
+  it('stores embedding metadata for eligible case', async () => {
+    const { service, datasetModel, imageEmbeddingService } = createService({
+      caseBySubmission: {
+        ...eligibleSubmission,
+        submission_id: 'sub-1',
+        eligibility_status: 'eligible',
+      },
+      embeddingResult: {
+        embedding: [1, 0, 0],
+        model: 'test-embedding-model',
+        source: 'visual_text_embedding',
+      },
+    });
+
+    const result = await service.generateEmbeddingForCase('sub-1');
+
+    expect(imageEmbeddingService.generateForQualityCase).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imageUrl: eligibleSubmission.image_url,
+        wasteType: 'oil',
+      }),
+    );
+    expect(result).toEqual({ submissionId: 'sub-1', status: 'ready' });
+    expect(datasetModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { submission_id: 'sub-1' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          image_embedding: [1, 0, 0],
+          image_embedding_model: 'test-embedding-model',
+          image_embedding_source: 'visual_text_embedding',
+          image_embedding_status: 'ready',
+          similarity_search_ready: true,
+        }),
+      }),
+    );
+  });
+
+  it('marks embedding generation as failed when provider returns null', async () => {
+    const { service, datasetModel } = createService({
+      caseBySubmission: {
+        ...eligibleSubmission,
+        submission_id: 'sub-1',
+        eligibility_status: 'eligible',
+      },
+      embeddingResult: null,
+    });
+
+    const result = await service.generateEmbeddingForCase('sub-1');
+
+    expect(result.status).toBe('failed');
+    expect(datasetModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { submission_id: 'sub-1' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          image_embedding_status: 'failed',
+          similarity_search_ready: false,
+        }),
+      }),
+    );
+  });
+
+  it('backfills embeddings for eligible cases with a bounded limit', async () => {
+    const { service, datasetModel } = createService({
+      cases: [
+        { ...eligibleSubmission, submission_id: 'sub-1' },
+        { ...eligibleSubmission, submission_id: 'sub-2' },
+      ],
+      caseBySubmission: {
+        ...eligibleSubmission,
+        submission_id: 'sub-1',
+        eligibility_status: 'eligible',
+      },
+      embeddingResult: {
+        embedding: [1, 0, 0],
+        model: 'test',
+        source: 'visual_text_embedding',
+      },
+    });
+
+    const result = await service.backfillEmbeddingsForEligibleCases({
+      limit: 1,
+    });
+
+    expect(datasetModel.find).toHaveBeenCalledWith({
+      eligibility_status: 'eligible',
+      image_embedding_status: { $ne: 'ready' },
+    });
+    expect(result.scanned).toBe(2);
+    expect(result.embedded).toBe(2);
+  });
+
+  it('backfill force omits ready embedding filter', async () => {
+    const { service, datasetModel } = createService({ cases: [] });
+
+    await service.backfillEmbeddingsForEligibleCases({ force: true });
+
+    expect(datasetModel.find).toHaveBeenCalledWith({
+      eligibility_status: 'eligible',
+    });
+  });
+
+  it('finds similar cases by waste type, excludes current submission, and applies min similarity', async () => {
+    const { service, datasetModel } = createService({
+      cases: [
+        {
+          ...eligibleSubmission,
+          submission_id: 'sub-a',
+          waste_type: 'oil',
+          image_embedding: [1, 0],
+          final_quality_grade: 'B',
+          eligibility_status: 'eligible',
+        },
+        {
+          ...eligibleSubmission,
+          submission_id: 'sub-b',
+          waste_type: 'oil',
+          image_embedding: [0, 1],
+          final_quality_grade: 'C',
+          eligibility_status: 'eligible',
+        },
+      ],
+    });
+
+    const result = await service.findSimilarCases({
+      wasteType: 'oil',
+      embedding: [1, 0],
+      excludeSubmissionId: 'sub-current',
+      minSimilarity: 0.7,
+      limit: 5,
+    });
+
+    expect(datasetModel.find).toHaveBeenCalledWith({
+      eligibility_status: 'eligible',
+      similarity_search_ready: true,
+      image_embedding_status: 'ready',
+      waste_type: 'oil',
+      submission_id: { $ne: 'sub-current' },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        submission_id: 'sub-a',
+        similarity: 1,
+      }),
+    );
   });
 });

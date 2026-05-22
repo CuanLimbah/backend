@@ -18,6 +18,18 @@ export type SedimentLevel = 'none' | 'low' | 'medium' | 'high' | 'unknown';
 
 export type VisionAssessmentSource = 'vision_llm' | 'fallback';
 
+export type ImageEmbeddingSource =
+  | 'image_embedding_model'
+  | 'visual_text_embedding'
+  | 'fallback_visual_text';
+
+export type ImageEmbeddingStatus = 'pending' | 'ready' | 'failed' | 'skipped';
+
+export type MultimodalRagSource =
+  | 'similar_quality_cases'
+  | 'none'
+  | 'embedding_unavailable';
+
 export type QualityFeedbackTag =
   | 'photo_unclear'
   | 'visual_missed_sediment'
@@ -134,6 +146,12 @@ export interface WasteSubmission {
   ai_visual_checked_at?: string;
   ai_visual_model?: string;
   ai_visual_source?: VisionAssessmentSource;
+  ai_similar_case_ids?: string[];
+  ai_similar_case_count?: number;
+  ai_similar_case_top_score?: number;
+  ai_multimodal_rag_used?: boolean;
+  ai_multimodal_rag_source?: MultimodalRagSource;
+  ai_multimodal_rag_model?: string;
   quality_grade_source?: QualityGradeSource;
   admin_quality_notes?: string;
   quality_feedback?: QualityFeedback;
@@ -158,6 +176,11 @@ export interface QualityAuditLog {
   ai_visual_source?: VisionAssessmentSource;
   ai_visual_model?: string;
   ai_visual_observations?: AiVisualObservations;
+  ai_multimodal_rag_used?: boolean;
+  ai_multimodal_rag_source?: string;
+  ai_similar_case_ids?: string[];
+  ai_similar_case_count?: number;
+  ai_similar_case_top_score?: number;
   final_quality_grade?: QualityGrade;
   quality_grade_source?: QualityGradeSource;
   admin_quality_notes?: string;
@@ -248,6 +271,19 @@ export interface QualityCaseDatasetRecord {
   override_feedback_severity?: QualityFeedbackSeverity;
   ai_error_pattern?: string;
   is_overridden: boolean;
+  image_embedding?: number[];
+  image_embedding_model?: string;
+  image_embedding_source?: ImageEmbeddingSource;
+  image_embedding_generated_at?: string;
+  image_embedding_status?: ImageEmbeddingStatus;
+  image_embedding_error?: string;
+  similarity_search_ready?: boolean;
+  ai_similar_case_ids?: string[];
+  ai_similar_case_count?: number;
+  ai_similar_case_top_score?: number;
+  ai_multimodal_rag_used?: boolean;
+  ai_multimodal_rag_source?: MultimodalRagSource;
+  ai_multimodal_rag_model?: string;
   actual_weight?: number;
   price_snapshot_per_kg?: number;
   final_price_per_kg?: number;
@@ -280,6 +316,12 @@ export interface QualityDatasetReadinessAnalytics {
   ragSourceUsage: Record<string, number>;
   feedbackTagCounts: Record<string, number>;
   aiErrorPatterns: Record<string, number>;
+  embeddingCoverage?: {
+    totalEligibleCases: number;
+    embeddedCases: number;
+    missingEmbeddingCases: number;
+    embeddingCoverageRate: number;
+  };
   recentEligibleCases: Array<{
     submission_id: string;
     waste_type: WasteType;

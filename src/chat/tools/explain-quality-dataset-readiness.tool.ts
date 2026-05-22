@@ -43,6 +43,13 @@ function getReadinessInterpretation(rate: number): string {
   return 'Dataset belum siap untuk Multimodal RAG.';
 }
 
+function getEmbeddingCoverageInterpretation(rate?: number): string {
+  if (rate == null) return 'Embedding coverage belum tersedia.';
+  if (rate >= 0.8) return 'Embedding coverage cukup siap untuk Multimodal RAG MVP.';
+  if (rate >= 0.5) return 'Embedding coverage sebagian siap.';
+  return 'Embedding coverage belum cukup.';
+}
+
 function getRecommendations(analytics: QualityDatasetReadinessAnalytics): string {
   const recommendations: string[] = [];
 
@@ -59,6 +66,11 @@ function getRecommendations(analytics: QualityDatasetReadinessAnalytics): string
   }
   if (analytics.missingAdminValidationCount > 0) {
     recommendations.push('- Pastikan submission selesai diverifikasi admin.');
+  }
+  if ((analytics.embeddingCoverage?.missingEmbeddingCases ?? 0) > 0) {
+    recommendations.push(
+      '- Jalankan backfill embedding untuk eligible quality cases.',
+    );
   }
 
   return recommendations.length
@@ -112,6 +124,23 @@ function buildExplanation(
     `- Grade A: ${formatNumber(analytics.byFinalGrade.A)}`,
     `- Grade B: ${formatNumber(analytics.byFinalGrade.B)}`,
     `- Grade C: ${formatNumber(analytics.byFinalGrade.C)}`,
+    '',
+    'EMBEDDING COVERAGE',
+    `- Total eligible cases: ${formatNumber(
+      analytics.embeddingCoverage?.totalEligibleCases,
+    )}`,
+    `- Embedded cases: ${formatNumber(
+      analytics.embeddingCoverage?.embeddedCases,
+    )}`,
+    `- Missing embedding: ${formatNumber(
+      analytics.embeddingCoverage?.missingEmbeddingCases,
+    )}`,
+    `- Coverage rate: ${formatPercent(
+      analytics.embeddingCoverage?.embeddingCoverageRate,
+    )}`,
+    `- ${getEmbeddingCoverageInterpretation(
+      analytics.embeddingCoverage?.embeddingCoverageRate,
+    )}`,
     '',
     'REKOMENDASI PERBAIKAN DATA',
     getRecommendations(analytics),

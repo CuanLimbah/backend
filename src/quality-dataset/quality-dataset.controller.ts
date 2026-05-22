@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import type {
   QualityCaseEligibilityStatus,
   QualityGrade,
@@ -49,5 +57,43 @@ export class QualityDatasetController {
   @Post('backfill')
   backfill() {
     return this.qualityCaseDatasetService.backfillFromCompletedSubmissions();
+  }
+
+  @Post('embeddings/backfill')
+  backfillEmbeddings(
+    @Body('limit') bodyLimit?: number,
+    @Body('force') bodyForce?: boolean,
+    @Query('limit') queryLimit?: string,
+    @Query('force') queryForce?: string,
+  ) {
+    const limit = bodyLimit ?? (queryLimit ? Number(queryLimit) : undefined);
+    const force =
+      bodyForce ??
+      (queryForce == null ? undefined : ['true', '1', 'yes'].includes(queryForce));
+
+    return this.qualityCaseDatasetService.backfillEmbeddingsForEligibleCases({
+      limit,
+      force,
+    });
+  }
+
+  @Post('cases/:submissionId/embedding')
+  generateCaseEmbedding(@Param('submissionId') submissionId: string) {
+    return this.qualityCaseDatasetService.generateEmbeddingForCase(submissionId);
+  }
+
+  @Get('similar-cases')
+  getSimilarCases(
+    @Query('submissionId') submissionId: string,
+    @Query('limit') limit?: string,
+    @Query('minSimilarity') minSimilarity?: string,
+  ) {
+    return this.qualityCaseDatasetService.getSimilarCasesForSubmission(
+      submissionId,
+      {
+        limit: limit ? Number(limit) : undefined,
+        minSimilarity: minSimilarity ? Number(minSimilarity) : undefined,
+      },
+    );
   }
 }

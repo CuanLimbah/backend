@@ -12,11 +12,13 @@ import { z } from 'zod';
 import type {
   AiVisualObservations,
   ContaminationLevel,
+  MultimodalRagSource,
   QualityGrade,
 } from '../common/models';
 import { getLlmModel } from '../chat/llm.factory';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
 import { QualityAuditLogService } from '../quality-audit/quality-audit-log.service';
+import { ImageEmbeddingService } from '../quality-dataset/image-embedding.service';
 import { QualityCaseDatasetService } from '../quality-dataset/quality-case-dataset.service';
 import { QualityRagService } from './quality-rag.service';
 import { QualityVisionService } from './quality-vision.service';
@@ -36,6 +38,16 @@ const LlmAssessmentSchema = z.object({
   requiresAdminReview: z.literal(true),
 });
 
+type MultimodalRagMetadata = {
+  used: boolean;
+  source: MultimodalRagSource;
+  model?: string;
+  similarCaseIds: string[];
+  similarCaseCount: number;
+  topScore?: number;
+  context?: string;
+};
+
 @Injectable()
 export class QualityAssessmentService {
   private readonly logger = new Logger(QualityAssessmentService.name);
@@ -47,6 +59,7 @@ export class QualityAssessmentService {
     private readonly qualityVisionService: QualityVisionService,
     private readonly qualityAuditLogService: QualityAuditLogService,
     private readonly qualityCaseDatasetService: QualityCaseDatasetService,
+    private readonly imageEmbeddingService: ImageEmbeddingService,
     private readonly config: ConfigService,
   ) {}
 
@@ -79,6 +92,10 @@ export class QualityAssessmentService {
           expectedWasteType: submission.waste_type,
         })
       : undefined;
+    const multimodalRag = await this.tryBuildMultimodalRagContext({
+      submission,
+      visualObservation,
+    });
     const ragContext = this.buildRagContext(
       conditionDescription,
       visualObservation,
@@ -93,6 +110,7 @@ export class QualityAssessmentService {
         submission,
         conditionDescription,
         visualObservation,
+        similarCasesContext: multimodalRag.context,
         criteriaText: criteria.criteriaText,
         criteria: criteria.criteria,
         ragSource: criteria.source,
@@ -122,6 +140,12 @@ export class QualityAssessmentService {
           ai_quality_model: assessment.modelVersion,
           ai_quality_source: assessment.qualitySource,
           ai_quality_rag_source: assessment.ragSource,
+          ai_similar_case_ids: multimodalRag.similarCaseIds,
+          ai_similar_case_count: multimodalRag.similarCaseCount,
+          ai_similar_case_top_score: multimodalRag.topScore,
+          ai_multimodal_rag_used: multimodalRag.used,
+          ai_multimodal_rag_source: multimodalRag.source,
+          ai_multimodal_rag_model: multimodalRag.model,
           ...(visualObservation
             ? {
                 ai_visual_observations: visualObservation,
@@ -171,6 +195,7 @@ export class QualityAssessmentService {
     submission: WasteSubmissionEntity;
     conditionDescription?: string;
     visualObservation?: AiVisualObservations;
+    similarCasesContext?: string;
     criteriaText: string;
     criteria: string[];
     ragSource: 'rag' | 'fallback_sop';
@@ -190,6 +215,7 @@ Assess waste quality using:
 2. Admin condition description
 3. Visual observations from QualityVisionService if available
 4. SOP grading criteria retrieved from Supabase RAG or fallback SOP
+5. Historical similar cases from quality_case_dataset if available
 
 Return valid JSON only:
 {
@@ -209,6 +235,11 @@ Guardrails:
 - If visual observation is unclear, blurry, invalid, or confidence <= 0.45, the final quality confidence must be <= 0.55.
 - If waste is not visible, final quality confidence must be <= 0.4.
 - If image detectedWasteType mismatches submission.waste_type, lower confidence and warn admin.
+- Use similar historical cases as supporting context only.
+- Final admin grades from similar cases are strong references, but do not copy grade blindly.
+- SOP RAG remains the main policy source.
+- If current visual evidence differs from historical cases, explain uncertainty and lower confidence.
+- If similar cases suggest Grade B but SOP/visual evidence suggests Grade C, explain uncertainty and lower confidence.
 - If conditionDescription mentions mixed water, many sediments, plastic, metal, glass, dangerous contamination, or severe rotting, recommend C.
 - If conditionDescription indicates clean, separated, closed container, no water, and very little sediment, recommend A or B depending on detail.
 - Never claim exact lab results.
@@ -221,6 +252,8 @@ Guardrails:
           visualObservation: input.visualObservation ?? null,
           imageUrlAvailable: Boolean(input.submission.image_url),
           sopCriteria: input.criteriaText,
+          historicalSimilarCases:
+            input.similarCasesContext || '(tidak ada kasus historis mirip)',
         }),
       });
 
@@ -415,6 +448,65 @@ Guardrails:
     ]
       .filter(Boolean)
       .join(' ');
+  }
+
+  private async tryBuildMultimodalRagContext(input: {
+    submission: WasteSubmissionEntity;
+    visualObservation?: AiVisualObservations;
+  }): Promise<MultimodalRagMetadata> {
+    const base: MultimodalRagMetadata = {
+      used: false,
+      source: 'embedding_unavailable',
+      similarCaseIds: [],
+      similarCaseCount: 0,
+    };
+
+    try {
+      const embeddingResult =
+        await this.imageEmbeddingService.generateForQualityCase({
+          imageUrl: input.submission.image_url,
+          visualObservation: input.visualObservation,
+          wasteType: input.submission.waste_type,
+        });
+
+      if (!embeddingResult) {
+        return base;
+      }
+
+      const similarCases = await this.qualityCaseDatasetService.findSimilarCases({
+        wasteType: input.submission.waste_type,
+        embedding: embeddingResult.embedding,
+        excludeSubmissionId: input.submission.id,
+        limit: 5,
+        minSimilarity: 0.7,
+      });
+
+      if (similarCases.length === 0) {
+        return {
+          used: false,
+          source: 'none',
+          model: embeddingResult.model,
+          similarCaseIds: [],
+          similarCaseCount: 0,
+        };
+      }
+
+      return {
+        used: true,
+        source: 'similar_quality_cases',
+        model: embeddingResult.model,
+        similarCaseIds: similarCases.map((item) => item.submission_id),
+        similarCaseCount: similarCases.length,
+        topScore: similarCases[0]?.similarity,
+        context:
+          this.qualityCaseDatasetService.buildSimilarCasesContext(similarCases),
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Failed to retrieve similar quality cases: ${String(error)}`,
+      );
+      return base;
+    }
   }
 
   private applyVisualConfidenceCaps(
