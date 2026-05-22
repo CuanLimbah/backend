@@ -168,6 +168,7 @@ export class QualityAuditLogService {
       feedbackTagCounts: this.countFeedbackTags(adminLogs),
       primaryOverrideReasons: this.countPrimaryOverrideReasons(overriddenLogs),
       aiErrorPatterns: this.countAiErrorPatterns(overriddenLogs),
+      multimodalRag: this.buildMultimodalRagAnalytics(logs),
       byWasteType: {
         food: this.buildWasteTypeAnalytics(logs, 'food'),
         oil: this.buildWasteTypeAnalytics(logs, 'oil'),
@@ -278,6 +279,152 @@ export class QualityAuditLogService {
 
   private roundMetric(value: number): number {
     return Number(value.toFixed(4));
+  }
+
+  private average(values: number[]): number | null {
+    return values.length
+      ? this.roundMetric(values.reduce((sum, value) => sum + value, 0) / values.length)
+      : null;
+  }
+
+  private isMultimodalRagUsed(log: QualityAuditLog): boolean {
+    return (
+      log.ai_multimodal_rag_used === true ||
+      log.ai_multimodal_rag_source === 'similar_quality_cases'
+    );
+  }
+
+  private buildMultimodalRagAnalytics(
+    logs: QualityAuditLog[],
+  ): QualityAiAnalytics['multimodalRag'] {
+    const aiLogs = logs.filter((log) => log.event_type === 'ai_quality_checked');
+    const adminLogs = logs.filter((log) =>
+      ['admin_verified', 'admin_overridden'].includes(log.event_type),
+    );
+    const comparableAdminLogs = adminLogs.filter(
+      (log) => log.ai_quality_grade && log.final_quality_grade,
+    );
+
+    const usedAiLogs = aiLogs.filter((log) => this.isMultimodalRagUsed(log));
+    const notUsedAiLogs = aiLogs.filter((log) => !this.isMultimodalRagUsed(log));
+    const usedAdminLogs = comparableAdminLogs.filter((log) =>
+      this.isMultimodalRagUsed(log),
+    );
+    const notUsedAdminLogs = comparableAdminLogs.filter(
+      (log) => !this.isMultimodalRagUsed(log),
+    );
+    const overrideCountWhenUsed = usedAdminLogs.filter(
+      (log) => log.is_overridden,
+    ).length;
+    const overrideCountWhenNotUsed = notUsedAdminLogs.filter(
+      (log) => log.is_overridden,
+    ).length;
+
+    return {
+      totalAiQualityChecks: aiLogs.length,
+      usedCount: usedAiLogs.length,
+      notUsedCount: aiLogs.length - usedAiLogs.length,
+      usageRate: this.safeRatio(usedAiLogs.length, aiLogs.length),
+      embeddingUnavailableCount: aiLogs.filter(
+        (log) => log.ai_multimodal_rag_source === 'embedding_unavailable',
+      ).length,
+      noSimilarCaseCount: aiLogs.filter(
+        (log) => log.ai_multimodal_rag_source === 'none',
+      ).length,
+      similarCaseContextUsedCount: aiLogs.filter(
+        (log) => log.ai_multimodal_rag_source === 'similar_quality_cases',
+      ).length,
+      averageSimilarCaseCount: this.average(
+        aiLogs
+          .map((log) => log.ai_similar_case_count)
+          .filter((value): value is number => typeof value === 'number'),
+      ),
+      averageTopSimilarityScore: this.average(
+        aiLogs
+          .map((log) => log.ai_similar_case_top_score)
+          .filter((value): value is number => typeof value === 'number'),
+      ),
+      averageConfidenceWhenUsed: this.average(
+        usedAiLogs
+          .map((log) => log.ai_quality_confidence)
+          .filter((value): value is number => typeof value === 'number'),
+      ),
+      averageConfidenceWhenNotUsed: this.average(
+        notUsedAiLogs
+          .map((log) => log.ai_quality_confidence)
+          .filter((value): value is number => typeof value === 'number'),
+      ),
+      overrideRateWhenUsed: this.safeRatio(
+        overrideCountWhenUsed,
+        usedAdminLogs.length,
+      ),
+      overrideRateWhenNotUsed: this.safeRatio(
+        overrideCountWhenNotUsed,
+        notUsedAdminLogs.length,
+      ),
+      agreementRateWhenUsed: this.safeRatio(
+        usedAdminLogs.length - overrideCountWhenUsed,
+        usedAdminLogs.length,
+      ),
+      agreementRateWhenNotUsed: this.safeRatio(
+        notUsedAdminLogs.length - overrideCountWhenNotUsed,
+        notUsedAdminLogs.length,
+      ),
+      adminDecisionCountWhenUsed: usedAdminLogs.length,
+      adminDecisionCountWhenNotUsed: notUsedAdminLogs.length,
+      overrideCountWhenUsed,
+      overrideCountWhenNotUsed,
+      sourceUsage: this.countBy(aiLogs, 'ai_multimodal_rag_source', [
+        'similar_quality_cases',
+        'none',
+        'embedding_unavailable',
+        'unknown',
+      ]) as QualityAiAnalytics['multimodalRag']['sourceUsage'],
+      byWasteType: {
+        food: this.buildMultimodalWasteTypeAnalytics(logs, 'food'),
+        oil: this.buildMultimodalWasteTypeAnalytics(logs, 'oil'),
+      },
+    };
+  }
+
+  private buildMultimodalWasteTypeAnalytics(
+    logs: QualityAuditLog[],
+    wasteType: WasteType,
+  ): QualityAiAnalytics['multimodalRag']['byWasteType'][WasteType] {
+    const wasteLogs = logs.filter((log) => log.waste_type === wasteType);
+    const aiLogs = wasteLogs.filter((log) => log.event_type === 'ai_quality_checked');
+    const usedAiLogs = aiLogs.filter((log) => this.isMultimodalRagUsed(log));
+    const comparableAdminLogs = wasteLogs.filter(
+      (log) =>
+        ['admin_verified', 'admin_overridden'].includes(log.event_type) &&
+        log.ai_quality_grade &&
+        log.final_quality_grade,
+    );
+    const usedAdminLogs = comparableAdminLogs.filter((log) =>
+      this.isMultimodalRagUsed(log),
+    );
+    const notUsedAdminLogs = comparableAdminLogs.filter(
+      (log) => !this.isMultimodalRagUsed(log),
+    );
+
+    return {
+      totalAiQualityChecks: aiLogs.length,
+      usedCount: usedAiLogs.length,
+      usageRate: this.safeRatio(usedAiLogs.length, aiLogs.length),
+      averageTopSimilarityScore: this.average(
+        aiLogs
+          .map((log) => log.ai_similar_case_top_score)
+          .filter((value): value is number => typeof value === 'number'),
+      ),
+      overrideRateWhenUsed: this.safeRatio(
+        usedAdminLogs.filter((log) => log.is_overridden).length,
+        usedAdminLogs.length,
+      ),
+      overrideRateWhenNotUsed: this.safeRatio(
+        notUsedAdminLogs.filter((log) => log.is_overridden).length,
+        notUsedAdminLogs.length,
+      ),
+    };
   }
 
   private countBy<T extends QualityAuditLog>(

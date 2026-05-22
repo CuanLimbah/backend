@@ -202,6 +202,10 @@ describe('QualityAuditLogService', () => {
         ai_quality_confidence: 0.8,
         ai_quality_rag_source: 'rag',
         ai_visual_source: 'vision_llm',
+        ai_multimodal_rag_used: true,
+        ai_multimodal_rag_source: 'similar_quality_cases',
+        ai_similar_case_count: 3,
+        ai_similar_case_top_score: 0.82,
         is_overridden: false,
         created_at: '2026-05-20T00:00:00.000Z',
       },
@@ -212,6 +216,8 @@ describe('QualityAuditLogService', () => {
         ai_quality_confidence: 0.4,
         ai_quality_rag_source: 'fallback_sop',
         ai_visual_source: 'fallback',
+        ai_multimodal_rag_used: false,
+        ai_multimodal_rag_source: 'embedding_unavailable',
         is_overridden: false,
         created_at: '2026-05-21T00:00:00.000Z',
       },
@@ -220,6 +226,8 @@ describe('QualityAuditLogService', () => {
         waste_type: 'oil',
         ai_quality_grade: 'B',
         final_quality_grade: 'B',
+        ai_multimodal_rag_used: true,
+        ai_multimodal_rag_source: 'similar_quality_cases',
         is_overridden: false,
         created_at: '2026-05-21T01:00:00.000Z',
       },
@@ -237,6 +245,8 @@ describe('QualityAuditLogService', () => {
         ai_quality_grade: 'C',
         final_quality_grade: 'A',
         ai_quality_confidence: 0.4,
+        ai_multimodal_rag_used: false,
+        ai_multimodal_rag_source: 'embedding_unavailable',
         admin_quality_notes: 'Inspeksi manual lebih bersih.',
         is_overridden: true,
         override_from: 'C',
@@ -273,8 +283,58 @@ describe('QualityAuditLogService', () => {
     });
     expect(analytics.primaryOverrideReasons).toEqual({ sop_mismatch: 1 });
     expect(analytics.aiErrorPatterns).toEqual({ sop_mismatch: 1 });
+    expect(analytics.multimodalRag.totalAiQualityChecks).toBe(2);
+    expect(analytics.multimodalRag.usedCount).toBe(1);
+    expect(analytics.multimodalRag.usageRate).toBe(0.5);
+    expect(analytics.multimodalRag.embeddingUnavailableCount).toBe(1);
+    expect(analytics.multimodalRag.averageSimilarCaseCount).toBe(3);
+    expect(analytics.multimodalRag.averageTopSimilarityScore).toBe(0.82);
+    expect(analytics.multimodalRag.averageConfidenceWhenUsed).toBe(0.8);
+    expect(analytics.multimodalRag.averageConfidenceWhenNotUsed).toBe(0.4);
+    expect(analytics.multimodalRag.overrideRateWhenUsed).toBe(0);
+    expect(analytics.multimodalRag.overrideRateWhenNotUsed).toBe(1);
+    expect(analytics.multimodalRag.agreementRateWhenUsed).toBe(1);
+    expect(analytics.multimodalRag.agreementRateWhenNotUsed).toBe(0);
+    expect(analytics.multimodalRag.sourceUsage).toEqual(
+      expect.objectContaining({
+        similar_quality_cases: 1,
+        embedding_unavailable: 1,
+        none: 0,
+        unknown: 0,
+      }),
+    );
+    expect(analytics.multimodalRag.byWasteType.oil.usedCount).toBe(1);
+    expect(analytics.multimodalRag.byWasteType.food.usedCount).toBe(0);
     expect(analytics.byWasteType.food.adminOverrideCount).toBe(1);
     expect(analytics.recentOverrides).toHaveLength(1);
+  });
+
+  it('calculates no-similar-case multimodal source usage safely', async () => {
+    const { service } = createService([
+      {
+        event_type: 'ai_quality_checked',
+        waste_type: 'oil',
+        ai_quality_confidence: 0.7,
+        ai_multimodal_rag_used: false,
+        ai_multimodal_rag_source: 'none',
+        created_at: '2026-05-21T00:00:00.000Z',
+      },
+      {
+        event_type: 'ai_quality_checked',
+        waste_type: 'oil',
+        ai_quality_confidence: 0.8,
+        created_at: '2026-05-21T01:00:00.000Z',
+      },
+    ]);
+
+    const analytics = await service.getAnalytics();
+
+    expect(analytics.multimodalRag.usedCount).toBe(0);
+    expect(analytics.multimodalRag.noSimilarCaseCount).toBe(1);
+    expect(analytics.multimodalRag.sourceUsage.none).toBe(1);
+    expect(analytics.multimodalRag.sourceUsage.unknown).toBe(1);
+    expect(analytics.multimodalRag.overrideRateWhenUsed).toBe(0);
+    expect(analytics.multimodalRag.agreementRateWhenNotUsed).toBe(0);
   });
 
   it('does not count admin decisions without AI grade as AI accepted', async () => {

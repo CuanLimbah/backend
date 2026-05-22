@@ -221,6 +221,44 @@ export interface QualityAiAnalytics {
   feedbackTagCounts: Record<string, number>;
   primaryOverrideReasons: Record<string, number>;
   aiErrorPatterns: Record<string, number>;
+  multimodalRag: {
+    totalAiQualityChecks: number;
+    usedCount: number;
+    notUsedCount: number;
+    usageRate: number;
+    embeddingUnavailableCount: number;
+    noSimilarCaseCount: number;
+    similarCaseContextUsedCount: number;
+    averageSimilarCaseCount: number | null;
+    averageTopSimilarityScore: number | null;
+    averageConfidenceWhenUsed: number | null;
+    averageConfidenceWhenNotUsed: number | null;
+    overrideRateWhenUsed: number;
+    overrideRateWhenNotUsed: number;
+    agreementRateWhenUsed: number;
+    agreementRateWhenNotUsed: number;
+    adminDecisionCountWhenUsed: number;
+    adminDecisionCountWhenNotUsed: number;
+    overrideCountWhenUsed: number;
+    overrideCountWhenNotUsed: number;
+    sourceUsage: {
+      similar_quality_cases: number;
+      none: number;
+      embedding_unavailable: number;
+      unknown: number;
+    };
+    byWasteType: Record<
+      WasteType,
+      {
+        totalAiQualityChecks: number;
+        usedCount: number;
+        usageRate: number;
+        averageTopSimilarityScore: number | null;
+        overrideRateWhenUsed: number;
+        overrideRateWhenNotUsed: number;
+      }
+    >;
+  };
   byWasteType: Record<
     WasteType,
     {

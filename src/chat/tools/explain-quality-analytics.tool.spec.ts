@@ -33,6 +33,51 @@ const baseAnalytics: QualityAiAnalytics = {
   feedbackTagCounts: {},
   primaryOverrideReasons: {},
   aiErrorPatterns: {},
+  multimodalRag: {
+    totalAiQualityChecks: 12,
+    usedCount: 8,
+    notUsedCount: 4,
+    usageRate: 0.6667,
+    embeddingUnavailableCount: 2,
+    noSimilarCaseCount: 2,
+    similarCaseContextUsedCount: 8,
+    averageSimilarCaseCount: 3,
+    averageTopSimilarityScore: 0.81,
+    averageConfidenceWhenUsed: 0.8,
+    averageConfidenceWhenNotUsed: 0.68,
+    overrideRateWhenUsed: 0.15,
+    overrideRateWhenNotUsed: 0.32,
+    agreementRateWhenUsed: 0.85,
+    agreementRateWhenNotUsed: 0.68,
+    adminDecisionCountWhenUsed: 4,
+    adminDecisionCountWhenNotUsed: 6,
+    overrideCountWhenUsed: 1,
+    overrideCountWhenNotUsed: 2,
+    sourceUsage: {
+      similar_quality_cases: 8,
+      none: 2,
+      embedding_unavailable: 2,
+      unknown: 0,
+    },
+    byWasteType: {
+      food: {
+        totalAiQualityChecks: 4,
+        usedCount: 2,
+        usageRate: 0.5,
+        averageTopSimilarityScore: 0.75,
+        overrideRateWhenUsed: 0.2,
+        overrideRateWhenNotUsed: 0.4,
+      },
+      oil: {
+        totalAiQualityChecks: 8,
+        usedCount: 6,
+        usageRate: 0.75,
+        averageTopSimilarityScore: 0.84,
+        overrideRateWhenUsed: 0.12,
+        overrideRateWhenNotUsed: 0.28,
+      },
+    },
+  },
   byWasteType: {
     food: {
       totalQualityChecks: 4,
@@ -189,6 +234,73 @@ describe('explain_quality_analytics tool', () => {
     expect(result).toContain('PENGGUNAAN VISION AI');
     expect(result).toContain('Vision LLM: 8');
     expect(result).toContain('Fallback vision: 4');
+  });
+
+  it('includes multimodal RAG performance metrics and safety note', async () => {
+    const service = createService();
+    setQualityAuditLogService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain('MULTIMODAL RAG PERFORMANCE');
+    expect(result).toContain('Usage rate: 67%');
+    expect(result).toContain('Embedding unavailable: 2');
+    expect(result).toContain('Tidak ada kasus mirip: 2');
+    expect(result).toContain('Rata-rata top similarity: 81%');
+    expect(result).toContain(
+      'Override rate saat Multimodal RAG digunakan: 15%',
+    );
+    expect(result).toContain(
+      'Agreement rate saat Multimodal RAG tidak digunakan: 68%',
+    );
+    expect(result).toContain(
+      'Multimodal RAG hanya memberi konteks tambahan dari kasus historis.',
+    );
+  });
+
+  it('warns when multimodal admin decision data is limited', async () => {
+    const service = createService();
+    setQualityAuditLogService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain(
+      'Data keputusan admin saat Multimodal RAG digunakan masih sedikit',
+    );
+  });
+
+  it('recommends backfill and dataset improvement from multimodal signals', async () => {
+    const service = createService({
+      ...baseAnalytics,
+      multimodalRag: {
+        ...baseAnalytics.multimodalRag,
+        embeddingUnavailableCount: 5,
+        noSimilarCaseCount: 4,
+        averageTopSimilarityScore: 0.62,
+      },
+    });
+    setQualityAuditLogService(service as any);
+
+    const result = await tool?.execute(
+      {},
+      { userId: 'admin-1', isAuthenticated: true, role: 'admin' },
+    );
+
+    expect(result).toContain(
+      'Jalankan backfill embedding visual-text untuk eligible quality cases.',
+    );
+    expect(result).toContain(
+      'Perbanyak dataset historis tervalidasi dan pastikan embedding coverage meningkat.',
+    );
+    expect(result).toContain(
+      'Evaluasi threshold similarity dan kualitas visual observation text.',
+    );
   });
 
   it('includes grade distribution and override matrix', async () => {

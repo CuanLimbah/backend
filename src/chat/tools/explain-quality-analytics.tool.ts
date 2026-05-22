@@ -135,6 +135,64 @@ function getVisionUsageInterpretation(
   return 'Belum ada penggunaan Vision LLM yang tercatat.';
 }
 
+function getMultimodalRagInterpretation(
+  multimodal: QualityAiAnalytics['multimodalRag'],
+): string {
+  const notes: string[] = [];
+
+  if (multimodal.usedCount === 0) {
+    notes.push('- Multimodal RAG belum cukup digunakan untuk dievaluasi.');
+  }
+
+  if (multimodal.adminDecisionCountWhenUsed < 5) {
+    notes.push(
+      '- Data keputusan admin saat Multimodal RAG digunakan masih sedikit, sehingga interpretasi harus hati-hati.',
+    );
+  }
+
+  if (
+    multimodal.adminDecisionCountWhenUsed > 0 &&
+    multimodal.adminDecisionCountWhenNotUsed > 0
+  ) {
+    if (multimodal.overrideRateWhenUsed < multimodal.overrideRateWhenNotUsed) {
+      notes.push(
+        '- Indikasi awal Multimodal RAG membantu karena override rate lebih rendah saat kasus historis mirip tersedia.',
+      );
+    } else if (
+      multimodal.overrideRateWhenUsed > multimodal.overrideRateWhenNotUsed
+    ) {
+      notes.push(
+        '- Override rate masih lebih tinggi saat Multimodal RAG digunakan. Perlu audit apakah kasus historis yang diambil benar-benar relevan.',
+      );
+    }
+  }
+
+  if (
+    multimodal.averageTopSimilarityScore != null &&
+    multimodal.averageTopSimilarityScore < 0.7
+  ) {
+    notes.push(
+      '- Rata-rata similarity masih rendah, sehingga kualitas retrieval perlu ditinjau.',
+    );
+  }
+
+  if (multimodal.embeddingUnavailableCount > 0) {
+    notes.push(
+      '- Embedding visual-text sering tidak tersedia. Jalankan backfill embedding atau cek konfigurasi embedding provider.',
+    );
+  }
+
+  if (multimodal.noSimilarCaseCount > 0) {
+    notes.push(
+      '- Banyak AI Quality Check belum menemukan kasus historis mirip. Dataset eligible atau embedding coverage perlu ditingkatkan.',
+    );
+  }
+
+  return notes.length
+    ? notes.join('\n')
+    : '- Belum ada sinyal risiko dominan pada Multimodal RAG.';
+}
+
 function getFilterDescription(input: {
   startDate?: string;
   endDate?: string;
@@ -296,6 +354,44 @@ function getActionRecommendations(analytics: QualityAiAnalytics): string {
   if ((analytics.feedbackTagCounts.photo_unclear ?? 0) > 0) {
     recommendations.push('- Tambahkan panduan upload foto untuk user.');
   }
+  if (analytics.multimodalRag.embeddingUnavailableCount > 0) {
+    recommendations.push(
+      '- Jalankan backfill embedding visual-text untuk eligible quality cases.',
+    );
+  }
+  if (analytics.multimodalRag.noSimilarCaseCount > 0) {
+    recommendations.push(
+      '- Perbanyak dataset historis tervalidasi dan pastikan embedding coverage meningkat.',
+    );
+  }
+  if (
+    analytics.multimodalRag.averageTopSimilarityScore != null &&
+    analytics.multimodalRag.averageTopSimilarityScore < 0.7
+  ) {
+    recommendations.push(
+      '- Evaluasi threshold similarity dan kualitas visual observation text.',
+    );
+  }
+  if (
+    analytics.multimodalRag.adminDecisionCountWhenUsed > 0 &&
+    analytics.multimodalRag.adminDecisionCountWhenNotUsed > 0 &&
+    analytics.multimodalRag.overrideRateWhenUsed <
+      analytics.multimodalRag.overrideRateWhenNotUsed
+  ) {
+    recommendations.push(
+      '- Pertahankan retrieval kasus historis sebagai konteks tambahan, tetapi admin tetap harus validasi akhir.',
+    );
+  }
+  if (
+    analytics.multimodalRag.adminDecisionCountWhenUsed > 0 &&
+    analytics.multimodalRag.adminDecisionCountWhenNotUsed > 0 &&
+    analytics.multimodalRag.overrideRateWhenUsed >
+      analytics.multimodalRag.overrideRateWhenNotUsed
+  ) {
+    recommendations.push(
+      '- Audit similar case retrieval dan cek apakah kasus yang mirip benar-benar satu jenis limbah dan pola kualitasnya relevan.',
+    );
+  }
 
   return recommendations.length
     ? recommendations.join('\n')
@@ -346,6 +442,48 @@ function buildExplanation(
     `- Unknown: ${formatNumber(analytics.visionUsage.unknown)}`,
     `- ${getVisionUsageInterpretation(analytics.visionUsage)}`,
     '',
+    'MULTIMODAL RAG PERFORMANCE',
+    `- Total AI Quality Check: ${formatNumber(
+      analytics.multimodalRag.totalAiQualityChecks,
+    )}`,
+    `- Multimodal RAG digunakan: ${formatNumber(
+      analytics.multimodalRag.usedCount,
+    )}`,
+    `- Usage rate: ${formatPercent(analytics.multimodalRag.usageRate)}`,
+    `- Embedding unavailable: ${formatNumber(
+      analytics.multimodalRag.embeddingUnavailableCount,
+    )}`,
+    `- Tidak ada kasus mirip: ${formatNumber(
+      analytics.multimodalRag.noSimilarCaseCount,
+    )}`,
+    `- Rata-rata jumlah kasus mirip: ${formatNumber(
+      analytics.multimodalRag.averageSimilarCaseCount,
+    )}`,
+    `- Rata-rata top similarity: ${formatPercent(
+      analytics.multimodalRag.averageTopSimilarityScore,
+    )}`,
+    `- Override rate saat Multimodal RAG digunakan: ${formatPercent(
+      analytics.multimodalRag.overrideRateWhenUsed,
+    )}`,
+    `- Override rate saat Multimodal RAG tidak digunakan: ${formatPercent(
+      analytics.multimodalRag.overrideRateWhenNotUsed,
+    )}`,
+    `- Agreement rate saat Multimodal RAG digunakan: ${formatPercent(
+      analytics.multimodalRag.agreementRateWhenUsed,
+    )}`,
+    `- Agreement rate saat Multimodal RAG tidak digunakan: ${formatPercent(
+      analytics.multimodalRag.agreementRateWhenNotUsed,
+    )}`,
+    `- Confidence saat digunakan: ${formatPercent(
+      analytics.multimodalRag.averageConfidenceWhenUsed,
+    )}`,
+    `- Confidence saat tidak digunakan: ${formatPercent(
+      analytics.multimodalRag.averageConfidenceWhenNotUsed,
+    )}`,
+    '',
+    'INTERPRETASI MULTIMODAL RAG',
+    getMultimodalRagInterpretation(analytics.multimodalRag),
+    '',
     'DISTRIBUSI GRADE',
     'AI Recommendation:',
     formatGradeCount(analytics.gradeDistribution.ai),
@@ -367,14 +505,14 @@ function buildExplanation(
     '',
     'CATATAN KEAMANAN',
     'Analytics ini hanya digunakan untuk evaluasi performa AI. AI tidak otomatis menentukan grade final, payout, wallet, atau transaksi. Admin tetap menjadi validator akhir.',
-    'Sistem juga menyiapkan quality case dataset untuk Multimodal RAG MVP berbasis embedding visual-text dari observasi visual dan pencarian kasus historis mirip sebagai konteks tambahan.',
+    'Multimodal RAG hanya memberi konteks tambahan dari kasus historis. AI tidak otomatis menentukan grade final, payout, wallet, atau transaksi. Admin tetap menjadi validator akhir.',
   ].join('\n');
 }
 
 const explainQualityAnalyticsTool: AgentTool = {
   name: 'explain_quality_analytics',
   description:
-    'Explain AI Quality Analytics, including agreement rate, admin override rate, confidence, RAG usage, vision fallback, grade distribution, override patterns, and recent override cases. Use this when admin asks about AI quality performance, override rate, confidence, fallback vision, Supabase RAG usage, or grade accuracy.',
+    'Explain AI Quality Analytics, including agreement rate, admin override rate, confidence, RAG usage, vision fallback, Multimodal RAG performance, similar cases, retrieval quality, top similarity, embedding unavailable, grade distribution, override patterns, and recent override cases. Use this when admin asks about AI quality performance, Multimodal RAG, similar historical cases, override rate with or without Multimodal RAG, confidence, fallback vision, Supabase RAG usage, or grade accuracy.',
   parameters: z.object({
     startDate: z.string().optional(),
     endDate: z.string().optional(),
