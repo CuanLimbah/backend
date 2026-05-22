@@ -17,6 +17,10 @@ import {
   QualityAuditLogSchema,
 } from './schemas/quality-audit-log.schema';
 import {
+  QualityCaseDatasetEntity,
+  QualityCaseDatasetSchema,
+} from './schemas/quality-case-dataset.schema';
+import {
   WasteSubmissionEntity,
   WasteSubmissionSchema,
 } from './schemas/submission.schema';
@@ -39,6 +43,7 @@ import { UserEntity, UserSchema } from './schemas/user.schema';
       { name: TransactionEntity.name, schema: TransactionSchema },
       { name: ActivityEventEntity.name, schema: ActivityEventSchema },
       { name: QualityAuditLogEntity.name, schema: QualityAuditLogSchema },
+      { name: QualityCaseDatasetEntity.name, schema: QualityCaseDatasetSchema },
     ]),
   ],
   providers: [DatabaseSeedService],

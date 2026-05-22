@@ -29,6 +29,7 @@ import {
 } from '../infrastructure/queues.constants';
 import { PricingService } from '../pricing/pricing.service';
 import { QualityAuditLogService } from '../quality-audit/quality-audit-log.service';
+import { QualityCaseDatasetService } from '../quality-dataset/quality-case-dataset.service';
 import { CreateSubmissionDto } from './dto/create-submission.dto';
 import { RejectSubmissionDto } from './dto/reject-submission.dto';
 import { VerifySubmissionDto } from './dto/verify-submission.dto';
@@ -71,6 +72,7 @@ export class SubmissionsService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly pricingService: PricingService,
     private readonly qualityAuditLogService: QualityAuditLogService,
+    private readonly qualityCaseDatasetService: QualityCaseDatasetService,
   ) {}
 
   async create(userId: string, dto: CreateSubmissionDto) {
@@ -303,6 +305,16 @@ export class SubmissionsService {
       } catch (error) {
         this.logger.warn(
           `Failed to write quality audit log: ${String(error)}`,
+        );
+      }
+
+      try {
+        await this.qualityCaseDatasetService.upsertFromSubmission(
+          updatedSubmission,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Failed to upsert quality case dataset: ${String(error)}`,
         );
       }
     }

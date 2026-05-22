@@ -217,6 +217,81 @@ export interface QualityAiAnalytics {
   }>;
 }
 
+export type QualityCaseEligibilityStatus =
+  | 'eligible'
+  | 'missing_image'
+  | 'missing_final_grade'
+  | 'missing_visual_observation'
+  | 'missing_admin_validation'
+  | 'excluded';
+
+export interface QualityCaseDatasetRecord {
+  id: string;
+  submission_id: string;
+  user_id: string;
+  waste_type: WasteType;
+  image_url?: string;
+  ai_quality_grade?: QualityGrade;
+  ai_quality_confidence?: number;
+  ai_contamination_level?: ContaminationLevel;
+  ai_quality_reason?: string;
+  ai_quality_rag_source?: 'rag' | 'fallback_sop';
+  ai_visual_source?: VisionAssessmentSource;
+  ai_visual_model?: string;
+  ai_visual_observations?: AiVisualObservations;
+  final_quality_grade?: QualityGrade;
+  quality_grade_source?: QualityGradeSource;
+  admin_quality_notes?: string;
+  quality_feedback?: QualityFeedback;
+  override_reason_tags?: QualityFeedbackTag[];
+  override_primary_reason?: QualityFeedbackTag;
+  override_feedback_severity?: QualityFeedbackSeverity;
+  ai_error_pattern?: string;
+  is_overridden: boolean;
+  actual_weight?: number;
+  price_snapshot_per_kg?: number;
+  final_price_per_kg?: number;
+  earnings?: number;
+  eligibility_status: QualityCaseEligibilityStatus;
+  eligibility_reasons: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QualityDatasetReadinessAnalytics {
+  totalCases: number;
+  eligibleCases: number;
+  ineligibleCases: number;
+  eligibilityRate: number;
+  missingImageCount: number;
+  missingFinalGradeCount: number;
+  missingVisualObservationCount: number;
+  missingAdminValidationCount: number;
+  byWasteType: Record<
+    WasteType,
+    {
+      totalCases: number;
+      eligibleCases: number;
+      eligibilityRate: number;
+    }
+  >;
+  byFinalGrade: Record<QualityGrade, number>;
+  visionSourceUsage: Record<string, number>;
+  ragSourceUsage: Record<string, number>;
+  feedbackTagCounts: Record<string, number>;
+  aiErrorPatterns: Record<string, number>;
+  recentEligibleCases: Array<{
+    submission_id: string;
+    waste_type: WasteType;
+    final_quality_grade?: QualityGrade;
+    ai_quality_grade?: QualityGrade;
+    ai_quality_confidence?: number;
+    ai_visual_source?: VisionAssessmentSource;
+    ai_quality_rag_source?: 'rag' | 'fallback_sop';
+    created_at: string;
+  }>;
+}
+
 export interface Transaction {
   id: string;
   user_id: string;

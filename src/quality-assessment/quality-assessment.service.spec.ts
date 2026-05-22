@@ -70,11 +70,15 @@ describe('QualityAssessmentService', () => {
     const qualityAuditLogService = {
       logAiQualityChecked: jest.fn().mockResolvedValue(undefined),
     };
+    const qualityCaseDatasetService = {
+      upsertFromSubmission: jest.fn().mockResolvedValue(undefined),
+    };
     const service = new QualityAssessmentService(
       submissionModel as any,
       qualityRagService as any,
       qualityVisionService as any,
       qualityAuditLogService as any,
+      qualityCaseDatasetService as any,
       config as any,
     );
 
@@ -84,6 +88,7 @@ describe('QualityAssessmentService', () => {
       qualityRagService,
       qualityVisionService,
       qualityAuditLogService,
+      qualityCaseDatasetService,
     };
   }
 

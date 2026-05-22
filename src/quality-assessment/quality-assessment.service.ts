@@ -17,6 +17,7 @@ import type {
 import { getLlmModel } from '../chat/llm.factory';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
 import { QualityAuditLogService } from '../quality-audit/quality-audit-log.service';
+import { QualityCaseDatasetService } from '../quality-dataset/quality-case-dataset.service';
 import { QualityRagService } from './quality-rag.service';
 import { QualityVisionService } from './quality-vision.service';
 import type {
@@ -45,6 +46,7 @@ export class QualityAssessmentService {
     private readonly qualityRagService: QualityRagService,
     private readonly qualityVisionService: QualityVisionService,
     private readonly qualityAuditLogService: QualityAuditLogService,
+    private readonly qualityCaseDatasetService: QualityCaseDatasetService,
     private readonly config: ConfigService,
   ) {}
 
@@ -147,6 +149,16 @@ export class QualityAssessmentService {
       } catch (error) {
         this.logger.warn(
           `Failed to write quality audit log: ${String(error)}`,
+        );
+      }
+
+      try {
+        await this.qualityCaseDatasetService.upsertFromSubmission(
+          updatedSubmission,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Failed to upsert quality case dataset: ${String(error)}`,
         );
       }
     }

@@ -71,6 +71,9 @@ describe('SubmissionsService', () => {
     const qualityAuditLogService = {
       logAdminQualityDecision: jest.fn().mockResolvedValue(undefined),
     };
+    const qualityCaseDatasetService = {
+      upsertFromSubmission: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new SubmissionsService(
       submissionModel as any,
@@ -80,6 +83,7 @@ describe('SubmissionsService', () => {
       cloudinaryService as any,
       pricingService as any,
       qualityAuditLogService as any,
+      qualityCaseDatasetService as any,
     );
 
     return {
@@ -88,6 +92,7 @@ describe('SubmissionsService', () => {
       transactionModel,
       pricingService,
       qualityAuditLogService,
+      qualityCaseDatasetService,
     };
   }
 
@@ -98,6 +103,7 @@ describe('SubmissionsService', () => {
       transactionModel,
       pricingService,
       qualityAuditLogService,
+      qualityCaseDatasetService,
     } =
       createService();
 
@@ -137,6 +143,12 @@ describe('SubmissionsService', () => {
       }),
       adminId: 'admin-1',
     });
+    expect(qualityCaseDatasetService.upsertFromSubmission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'sub-1',
+        quality_grade: 'B',
+      }),
+    );
   });
 
   it('keeps old verify payloads working by defaulting qualityGrade to A', async () => {

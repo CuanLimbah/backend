@@ -16,6 +16,7 @@ import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
 import { DropPointEntity } from '../database/schemas/drop-point.schema';
 import { PricingService } from '../pricing/pricing.service';
 import { QualityAuditLogService } from '../quality-audit/quality-audit-log.service';
+import { QualityCaseDatasetService } from '../quality-dataset/quality-case-dataset.service';
 import type { UserRole } from '../common/models';
 
 import { getLlmModel, getEmbeddingModel } from './llm.factory';
@@ -27,6 +28,7 @@ import { setPricingService } from './tools/estimate-dynamic-price.tool';
 import { setPricingSubmissionModel } from './tools/explain-submission-pricing.tool';
 import { setQualityAssessmentSubmissionModel } from './tools/explain-quality-assessment.tool';
 import { setQualityAuditLogService } from './tools/explain-quality-analytics.tool';
+import { setQualityCaseDatasetService } from './tools/explain-quality-dataset-readiness.tool';
 
 // Side-effect imports: auto-register tools
 import './tools/navigate-website.tool';
@@ -35,6 +37,7 @@ import './tools/estimate-dynamic-price.tool';
 import './tools/explain-submission-pricing.tool';
 import './tools/explain-quality-assessment.tool';
 import './tools/explain-quality-analytics.tool';
+import './tools/explain-quality-dataset-readiness.tool';
 import './tools/get-submission-status.tool';
 import './tools/find-drop-point.tool';
 
@@ -60,6 +63,7 @@ export class ChatService implements OnModuleInit {
     private readonly dropPointModel: Model<DropPointEntity>,
     private readonly pricingService: PricingService,
     private readonly qualityAuditLogService: QualityAuditLogService,
+    private readonly qualityCaseDatasetService: QualityCaseDatasetService,
   ) {
     const supabaseUrl = this.config.get<string>('SUPABASE_URL');
     const supabaseKey = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
@@ -89,6 +93,7 @@ export class ChatService implements OnModuleInit {
     setPricingSubmissionModel(this.submissionModel);
     setQualityAssessmentSubmissionModel(this.submissionModel);
     setQualityAuditLogService(this.qualityAuditLogService);
+    setQualityCaseDatasetService(this.qualityCaseDatasetService);
 
     this.logger.log(
       `Supabase: ${this.supabase ? 'connected' : 'NOT configured (RAG disabled)'}`,
@@ -298,6 +303,7 @@ Rules:
 - If the user asks kenapa harga saya segini, kenapa cuan saya berubah, kenapa grade B, jelaskan harga setoran, or breakdown pricing, use the 'explain_submission_pricing' tool.
 - If the user asks about AI quality check, rekomendasi grade AI, tingkat kontaminasi, why AI recommended a quality grade, why confidence is low, what AI saw from the photo, how AI quality affects pricing, or whether final price used AI recommendation or admin grade, use the 'explain_quality_assessment' tool.
 - If an admin asks about performa AI quality, analytics AI, override rate, agreement rate, fallback vision, fallback SOP, Supabase RAG usage, confidence AI, grade AI sering salah, or whether AI recommendations match admin decisions, use the 'explain_quality_analytics' tool.
+- If an admin asks about dataset readiness, kesiapan dataset, historical quality cases, missing image/final grade/visual observation, or preparation for Multimodal RAG, use the 'explain_quality_dataset_readiness' tool.
 - If the user asks about their submission status, use the 'get_submission_status' tool.
 - If the user asks about drop-off locations, use the 'find_drop_point' tool.
 - Acknowledge their past history if relevant.`,

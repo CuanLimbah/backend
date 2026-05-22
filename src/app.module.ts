@@ -15,6 +15,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { PickupRoutesModule } from './pickup-routes/pickup-routes.module';
 import { QualityAuditModule } from './quality-audit/quality-audit.module';
 import { QualityAssessmentModule } from './quality-assessment/quality-assessment.module';
+import { QualityDatasetModule } from './quality-dataset/quality-dataset.module';
 import { buildRedisConnectionOptions } from './infrastructure/redis-connection.util';
 import { PricesModule } from './prices/prices.module';
 import { SubmissionsModule } from './submissions/submissions.module';
@@ -49,6 +50,7 @@ import { UsersModule } from './users/users.module';
     PaymentsModule,
     QualityAuditModule,
     QualityAssessmentModule,
+    QualityDatasetModule,
     UsersModule,
     SubmissionsModule,
     TransactionsModule,

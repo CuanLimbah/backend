@@ -367,6 +367,7 @@ function buildExplanation(
     '',
     'CATATAN KEAMANAN',
     'Analytics ini hanya digunakan untuk evaluasi performa AI. AI tidak otomatis menentukan grade final, payout, wallet, atau transaksi. Admin tetap menjadi validator akhir.',
+    'Sistem juga mulai menyiapkan quality case dataset terstruktur untuk readiness Multimodal RAG di masa depan, tanpa menjalankan image embedding atau similarity search pada tahap ini.',
   ].join('\n');
 }
 
