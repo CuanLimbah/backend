@@ -66,6 +66,7 @@ export class TransactionsService {
       created_at: new Date().toISOString(),
       withdrawal_method: method,
       withdrawal_account: account,
+      notes: 'Mode demo - menunggu persetujuan admin',
     });
 
     await this.activityQueue.add(ACTIVITY_JOB_LOG, {
@@ -76,6 +77,7 @@ export class TransactionsService {
         user_id: userId,
         amount,
         method,
+        mode: 'demo',
       },
     });
 
@@ -140,7 +142,7 @@ export class TransactionsService {
         {
           status: 'completed',
           completed_at: new Date().toISOString(),
-          notes: `Disetujui oleh ${adminId}`,
+          notes: `Simulasi penarikan disetujui oleh ${adminId}. Tidak ada transfer third-party.`,
         },
         { new: true },
       )
@@ -154,6 +156,7 @@ export class TransactionsService {
       entityId: id,
       payload: {
         admin_id: adminId,
+        mode: 'demo',
       },
     });
 
@@ -179,7 +182,7 @@ export class TransactionsService {
         {
           status: 'rejected',
           completed_at: new Date().toISOString(),
-          notes: `${reason} (diproses oleh ${adminId})`,
+          notes: `Simulasi ditolak: ${reason} (diproses oleh ${adminId})`,
         },
         { new: true },
       )
@@ -194,6 +197,7 @@ export class TransactionsService {
       payload: {
         admin_id: adminId,
         reason,
+        mode: 'demo',
       },
     });
 
