@@ -47,7 +47,7 @@ describe('explain_submission_pricing tool', () => {
       final_price_per_kg: 2550,
       earnings: 25500,
       pricing_explanation:
-        'Cuan final untuk 10 kg minyak jelantah grade B adalah Rp 25.500.',
+        'Cuan final untuk 10 Liter minyak jelantah grade B adalah Rp 25.500.',
     });
     setPricingSubmissionModel(model as any);
 
@@ -61,8 +61,9 @@ describe('explain_submission_pricing tool', () => {
       user_id: 'user-1',
     });
     expect(result).toContain('Grade kualitas: B.');
-    expect(result).toContain('Harga dasar saat submit: Rp 3.000/kg.');
-    expect(result).toContain('Harga final / kg: Rp 2.550/kg.');
+    expect(result).toContain('Volume aktual: 10 Liter.');
+    expect(result).toContain('Harga dasar saat submit: Rp 3.000/liter.');
+    expect(result).toContain('Harga final / liter: Rp 2.550/liter.');
     expect(result).toContain('Total Cuan: Rp 25.500.');
   });
 
@@ -85,7 +86,7 @@ describe('explain_submission_pricing tool', () => {
     );
 
     expect(result).toBe(
-      'Setoran ini belum memiliki breakdown dynamic pricing lengkap, tetapi total Cuan tercatat sebesar Rp 4.500 dengan berat aktual 4.5 kg.',
+      'Setoran ini belum memiliki breakdown dynamic pricing lengkap, tetapi total Cuan tercatat sebesar Rp 4.500 dengan berat aktual 4.5 KG.',
     );
   });
 

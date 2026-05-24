@@ -51,6 +51,10 @@ SQL bersifat idempotent:
 5. Cek vector status.
 6. Cek retrieval quality analytics.
 
+## Unit Compatibility Note
+
+Food waste uses `kg`. Used cooking oil uses `liter`. Existing MongoDB/API field names such as `estimated_weight`, `actual_weight`, `price_per_kg`, and `final_price_per_kg` are kept for backward compatibility. For oil, those values should be displayed and explained as volume and price per liter.
+
 ## Admin Endpoints
 
 ### `GET /admin/quality-dataset/vector/status`

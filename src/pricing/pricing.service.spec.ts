@@ -26,8 +26,55 @@ describe('PricingService', () => {
     expect(result.qualityGrade).toBe('A');
     expect(result.basePricePerKg).toBe(3000);
     expect(result.finalPricePerKg).toBe(3000);
+    expect(result.quantity).toBe(10);
+    expect(result.unit).toBe('liter');
+    expect(result.basePricePerUnit).toBe(3000);
+    expect(result.finalPricePerUnit).toBe(3000);
     expect(result.earnings).toBe(30000);
     expect(result.explanation).toContain('Estimasi cuan');
+    expect(result.explanation).toContain('10 Liter minyak jelantah');
+    expect(result.explanation).toContain('/liter');
+  });
+
+  it('uses kg labels for food pricing explanations', async () => {
+    const service = new PricingService(mockPriceModel(1000) as any);
+
+    const result = await service.calculateEstimate({
+      wasteType: 'food',
+      weightKg: 3,
+      qualityGrade: 'A',
+      priceSnapshotPerKg: 1000,
+    });
+
+    expect(result.unit).toBe('kg');
+    expect(result.quantityLabel).toBe('Berat');
+    expect(result.explanation).toContain('3 KG limbah makanan');
+    expect(result.explanation).toContain('/kg');
+    expect(result.weightKg).toBe(3);
+    expect(result.basePricePerKg).toBe(1000);
+    expect(result.finalPricePerKg).toBe(1000);
+  });
+
+  it('uses liter labels for oil pricing explanations', async () => {
+    const service = new PricingService(mockPriceModel(3000) as any);
+
+    const result = await service.calculateEstimate({
+      wasteType: 'oil',
+      weightKg: 3,
+      qualityGrade: 'A',
+      priceSnapshotPerKg: 3000,
+    });
+
+    expect(result.unit).toBe('liter');
+    expect(result.quantityLabel).toBe('Volume');
+    expect(result.explanation).toContain('3 Liter minyak jelantah');
+    expect(result.explanation).toContain('/liter');
+    expect(result.weightKg).toBe(3);
+    expect(result.basePricePerKg).toBe(3000);
+    expect(result.finalPricePerKg).toBe(3000);
+    expect(result.quantity).toBe(3);
+    expect(result.basePricePerUnit).toBe(3000);
+    expect(result.finalPricePerUnit).toBe(3000);
   });
 
   it.each([

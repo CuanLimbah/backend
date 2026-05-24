@@ -31,10 +31,15 @@ describe('SubmissionsService', () => {
       qualityMultiplier: 0.85,
       volumeMultiplier: 1,
       finalPricePerKg: 2550,
+      finalPricePerUnit: 2550,
+      quantity: 10,
+      unit: 'liter',
+      quantityLabel: 'Volume',
+      basePricePerUnit: 3000,
       earnings: 25500,
       pricingModelVersion: 'dynamic-pricing-mvp-v1',
       breakdown: { zeroPayout: false },
-      explanation: 'Cuan final untuk 10 kg minyak jelantah grade B adalah Rp 25.500.',
+      explanation: 'Cuan final untuk 10 Liter minyak jelantah grade B adalah Rp 25.500.',
       ...overrides?.pricingResult,
     };
     const updatedSubmission = {
@@ -111,7 +116,11 @@ describe('SubmissionsService', () => {
     } =
       createService();
 
-    await service.verify('sub-1', { actualWeight: 10, qualityGrade: 'B' }, 'admin-1');
+    const result = await service.verify(
+      'sub-1',
+      { actualWeight: 10, qualityGrade: 'B' },
+      'admin-1',
+    );
 
     expect(pricingService.calculateFinalPrice).toHaveBeenCalledWith({
       wasteType: 'oil',
@@ -151,6 +160,47 @@ describe('SubmissionsService', () => {
       expect.objectContaining({
         id: 'sub-1',
         quality_grade: 'B',
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        quantity_unit: 'liter',
+        quantity_label: 'Volume',
+        price_unit_label: 'Rp/liter',
+      }),
+    );
+  });
+
+  it('adds kg unit labels for food submission responses', async () => {
+    const { service } = createService({
+      submission: {
+        waste_type: 'food',
+        price_snapshot_per_kg: 1000,
+      },
+      pricingResult: {
+        wasteType: 'food',
+        qualityGrade: 'A',
+        basePricePerKg: 1000,
+        basePricePerUnit: 1000,
+        finalPricePerKg: 1000,
+        finalPricePerUnit: 1000,
+        earnings: 10000,
+        unit: 'kg',
+        quantityLabel: 'Berat',
+      },
+    });
+
+    const result = await service.verify(
+      'sub-1',
+      { actualWeight: 10, qualityGrade: 'A' },
+      'admin-1',
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        quantity_unit: 'kg',
+        quantity_label: 'Berat',
+        price_unit_label: 'Rp/kg',
       }),
     );
   });

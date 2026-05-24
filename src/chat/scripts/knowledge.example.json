@@ -5,7 +5,7 @@
   },
   {
     "title": "Jenis Limbah",
-    "content": "CuanLimbah menerima dua jenis limbah: limbah makanan (food waste) dan minyak jelantah (used cooking oil). Harga per kg bervariasi dan diupdate oleh admin."
+    "content": "CuanLimbah menerima dua jenis limbah: limbah makanan (food waste) dengan satuan kg dan minyak jelantah (used cooking oil) dengan satuan liter. Harga per unit bervariasi dan diupdate oleh admin."
   },
   {
     "title": "Cara Setor Limbah",
