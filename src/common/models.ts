@@ -119,6 +119,11 @@ export interface WasteSubmission {
   waste_type: WasteType;
   estimated_weight: number;
   actual_weight?: number;
+  drop_point_id?: string;
+  drop_point_name?: string;
+  drop_point_address?: string;
+  drop_point_latitude?: number;
+  drop_point_longitude?: number;
   image_url?: string;
   status: SubmissionStatus;
   created_at: string;

@@ -20,6 +20,7 @@ import {
 import { roundToOneDecimal, toCurrencyAmount } from '../common/utils';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
 import { TransactionEntity } from '../database/schemas/transaction.schema';
+import { DropPointEntity } from '../database/schemas/drop-point.schema';
 import { CloudinaryService } from '../infrastructure/cloudinary.service';
 import {
   ACTIVITY_JOB_LOG,
@@ -65,6 +66,8 @@ export class SubmissionsService {
     private readonly submissionModel: Model<WasteSubmissionEntity>,
     @InjectModel(TransactionEntity.name)
     private readonly transactionModel: Model<TransactionEntity>,
+    @InjectModel(DropPointEntity.name)
+    private readonly dropPointModel: Model<DropPointEntity>,
     @InjectQueue(ACTIVITY_QUEUE)
     private readonly activityQueue: Queue,
     @InjectQueue(MEDIA_QUEUE)
@@ -79,6 +82,7 @@ export class SubmissionsService {
     const wasteType = dto.wasteType;
     const estimatedWeight = Number(dto.estimatedWeight);
     const imageUrl = dto.imageUrl?.trim() || undefined;
+    const dropPointId = dto.dropPointId?.trim() || undefined;
 
     if (!this.isSupportedWasteType(wasteType)) {
       throw new BadRequestException('Jenis limbah tidak didukung');
@@ -91,12 +95,28 @@ export class SubmissionsService {
     const submissionId = `sub-${randomUUID()}`;
     const priceSnapshotPerKg =
       await this.pricingService.getCurrentBasePricePerKg(wasteType);
+    const dropPoint = dropPointId
+      ? await this.dropPointModel
+          .findOne({ id: dropPointId })
+          .select({ _id: 0, __v: 0, location: 0 })
+          .lean()
+          .exec()
+      : null;
+
+    if (dropPointId && !dropPoint) {
+      throw new BadRequestException('Drop point tidak ditemukan');
+    }
 
     await this.submissionModel.create({
       id: submissionId,
       user_id: userId,
       waste_type: wasteType,
       estimated_weight: roundToOneDecimal(estimatedWeight),
+      drop_point_id: dropPoint?.id,
+      drop_point_name: dropPoint?.name,
+      drop_point_address: dropPoint?.address,
+      drop_point_latitude: dropPoint?.latitude,
+      drop_point_longitude: dropPoint?.longitude,
       price_snapshot_per_kg: priceSnapshotPerKg,
       image_url: imageUrl,
       status: 'pending',
@@ -126,6 +146,7 @@ export class SubmissionsService {
       payload: {
         user_id: userId,
         waste_type: wasteType,
+        drop_point_id: dropPoint?.id,
       },
     });
 

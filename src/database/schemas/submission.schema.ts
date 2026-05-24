@@ -37,6 +37,21 @@ export class WasteSubmissionEntity implements WasteSubmission {
   @Prop()
   actual_weight?: number;
 
+  @Prop({ index: true })
+  drop_point_id?: string;
+
+  @Prop()
+  drop_point_name?: string;
+
+  @Prop()
+  drop_point_address?: string;
+
+  @Prop()
+  drop_point_latitude?: number;
+
+  @Prop()
+  drop_point_longitude?: number;
+
   @Prop()
   image_url?: string;
 
