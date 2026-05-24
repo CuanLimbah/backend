@@ -31,6 +31,11 @@ type ListCaseFilters = {
   limit?: number;
 };
 
+type QueryEmbeddingSource =
+  | 'dataset_embedding'
+  | 'temporary_submission_visual_text'
+  | 'embedding_unavailable';
+
 export type SimilarQualityCase = {
   submission_id: string;
   waste_type: WasteType;
@@ -491,44 +496,151 @@ export class QualityCaseDatasetService {
       provider?: 'supabase_pgvector' | 'application_cosine' | 'auto';
     } = {},
   ): Promise<SimilarQualityCaseSearchResult> {
-    let qualityCase = (await this.qualityCaseDatasetModel
-      .findOne({ submission_id: submissionId })
-      .lean()
-      .exec()) as QualityCaseDatasetRecord | null;
+    const queryEmbedding = await this.buildQueryEmbeddingForSubmission(
+      submissionId,
+    );
 
-    if (!qualityCase) {
-      throw new NotFoundException(
-        `Quality dataset case for submission "${submissionId}" not found`,
-      );
-    }
-
-    if (!qualityCase.image_embedding?.length) {
-      const result = await this.generateEmbeddingForCase(submissionId);
-
-      if (result.status !== 'ready') {
-        throw new NotFoundException(
-          result.reason ?? 'Embedding belum tersedia untuk kasus ini',
-        );
-      }
-
-      qualityCase = (await this.qualityCaseDatasetModel
-        .findOne({ submission_id: submissionId })
-        .lean()
-        .exec()) as QualityCaseDatasetRecord | null;
-    }
-
-    if (!qualityCase?.image_embedding?.length) {
-      throw new NotFoundException('Embedding belum tersedia untuk kasus ini');
+    if (!queryEmbedding.embedding?.length) {
+      return {
+        cases: [],
+        provider: 'embedding_unavailable',
+        fallbackUsed: false,
+      };
     }
 
     return this.findSimilarCasesWithProvider({
-      wasteType: qualityCase.waste_type,
-      embedding: qualityCase.image_embedding,
+      wasteType: queryEmbedding.wasteType,
+      embedding: queryEmbedding.embedding,
       excludeSubmissionId: submissionId,
       limit: options.limit,
       minSimilarity: options.minSimilarity,
       provider: options.provider ?? 'auto',
     });
+  }
+
+  private async buildQueryEmbeddingForSubmission(
+    submissionId: string,
+  ): Promise<{
+    wasteType: WasteType;
+    embedding?: number[];
+    source: QueryEmbeddingSource;
+    reason?: string;
+  }> {
+    const qualityCase = (await this.qualityCaseDatasetModel
+      .findOne({ submission_id: submissionId })
+      .lean()
+      .exec()) as QualityCaseDatasetRecord | null;
+
+    if (qualityCase?.image_embedding?.length) {
+      if (!this.isValidEmbeddingDimension(qualityCase.image_embedding)) {
+        return {
+          wasteType: qualityCase.waste_type,
+          source: 'embedding_unavailable',
+          reason: 'Existing dataset embedding dimension is invalid',
+        };
+      }
+
+      return {
+        wasteType: qualityCase.waste_type,
+        embedding: qualityCase.image_embedding,
+        source: 'dataset_embedding',
+      };
+    }
+
+    const submission =
+      ((await this.submissionModel
+        .findOne({ id: submissionId })
+        .lean()
+        .exec()) as WasteSubmission | null) ??
+      (qualityCase
+        ? ({
+            id: qualityCase.submission_id,
+            user_id: qualityCase.user_id,
+            waste_type: qualityCase.waste_type,
+            estimated_weight: 0,
+            image_url: qualityCase.image_url,
+            status: 'pending',
+            created_at: qualityCase.created_at,
+            ai_quality_reason: qualityCase.ai_quality_reason,
+            ai_visual_observations: qualityCase.ai_visual_observations,
+          } satisfies WasteSubmission)
+        : null);
+
+    if (!submission) {
+      throw new NotFoundException(
+        `Submission "${submissionId}" tidak ditemukan`,
+      );
+    }
+
+    const visualText = this.buildTemporaryVisualTextForSubmission(submission);
+
+    if (!visualText) {
+      return {
+        wasteType: submission.waste_type,
+        source: 'embedding_unavailable',
+        reason: 'Visual observation text is unavailable',
+      };
+    }
+
+    const embeddingResult =
+      await this.imageEmbeddingService.generateFromVisualText(visualText);
+
+    if (
+      !embeddingResult?.embedding?.length ||
+      !this.isValidEmbeddingDimension(embeddingResult.embedding)
+    ) {
+      return {
+        wasteType: submission.waste_type,
+        source: 'embedding_unavailable',
+        reason: 'Embedding provider unavailable or invalid dimension',
+      };
+    }
+
+    return {
+      wasteType: submission.waste_type,
+      embedding: embeddingResult.embedding,
+      source: 'temporary_submission_visual_text',
+    };
+  }
+
+  private buildTemporaryVisualTextForSubmission(
+    submission: WasteSubmission,
+  ): string {
+    const visual = submission.ai_visual_observations;
+    const parts = [
+      `Waste type: ${submission.waste_type}.`,
+      visual?.visualObservation
+        ? `AI visual observation: ${visual.visualObservation}.`
+        : undefined,
+      visual?.imageQuality ? `Image quality: ${visual.imageQuality}.` : undefined,
+      visual?.isWasteVisible != null
+        ? `Waste visible: ${visual.isWasteVisible}.`
+        : undefined,
+      visual?.detectedWasteType
+        ? `Detected waste type: ${visual.detectedWasteType}.`
+        : undefined,
+      visual?.color ? `Color: ${visual.color}.` : undefined,
+      visual?.clarity ? `Clarity: ${visual.clarity}.` : undefined,
+      visual?.sedimentLevel ? `Sediment level: ${visual.sedimentLevel}.` : undefined,
+      visual?.waterVisible != null
+        ? `Water visible: ${visual.waterVisible}.`
+        : undefined,
+      visual?.foodResidueVisible != null
+        ? `Food residue visible: ${visual.foodResidueVisible}.`
+        : undefined,
+      visual?.nonOrganicContaminationVisible != null
+        ? `Non organic contamination visible: ${visual.nonOrganicContaminationVisible}.`
+        : undefined,
+      visual?.containerCondition
+        ? `Container condition: ${visual.containerCondition}.`
+        : undefined,
+      submission.ai_quality_reason
+        ? `AI quality reason: ${submission.ai_quality_reason}.`
+        : undefined,
+      submission.image_url ? 'Image URL is available.' : undefined,
+    ].filter(Boolean);
+
+    return parts.length > 1 ? parts.join(' ') : '';
   }
 
   syncCaseVectorToSupabase(submissionId: string) {
@@ -762,6 +874,18 @@ export class QualityCaseDatasetService {
   ): number {
     const safeValue = Number.isFinite(value) ? value : fallback;
     return Math.min(Math.max(safeValue, min), max);
+  }
+
+  private isValidEmbeddingDimension(embedding: number[]): boolean {
+    const configuredDimension = Number(
+      process.env.QUALITY_CASE_VECTOR_DIMENSIONS,
+    );
+
+    if (!Number.isFinite(configuredDimension) || configuredDimension <= 0) {
+      return embedding.length > 0;
+    }
+
+    return embedding.length === configuredDimension;
   }
 
   private countMissingReason(

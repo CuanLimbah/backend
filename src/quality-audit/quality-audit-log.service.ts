@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
 import { Model } from 'mongoose';
@@ -6,6 +6,7 @@ import type {
   QualityAiAnalytics,
   QualityAuditEventType,
   QualityAuditLog,
+  FinalAiEvaluationReport,
   QualityFeedbackTag,
   QualityGrade,
   QualityVectorProvider,
@@ -13,6 +14,7 @@ import type {
   WasteType,
 } from '../common/models';
 import { QualityAuditLogEntity } from '../database/schemas/quality-audit-log.schema';
+import { QualityCaseDatasetService } from '../quality-dataset/quality-case-dataset.service';
 
 type AnalyticsFilters = {
   startDate?: string;
@@ -31,6 +33,8 @@ export class QualityAuditLogService {
   constructor(
     @InjectModel(QualityAuditLogEntity.name)
     private readonly qualityAuditLogModel: Model<QualityAuditLogEntity>,
+    @Optional()
+    private readonly qualityCaseDatasetService?: QualityCaseDatasetService,
   ) {}
 
   async logAiQualityChecked(submission: WasteSubmission): Promise<void> {
@@ -191,12 +195,290 @@ export class QualityAuditLogService {
     };
   }
 
+  async getFinalAiEvaluationReport(
+    filters: AnalyticsFilters = {},
+  ): Promise<FinalAiEvaluationReport> {
+    const analytics = await this.getAnalytics(filters);
+    const dataset = this.qualityCaseDatasetService
+      ? await this.qualityCaseDatasetService.getReadinessAnalytics(filters)
+      : null;
+    const embeddingCoverageRate =
+      dataset?.embeddingCoverage?.embeddingCoverageRate ?? 0;
+    const supabaseVectorSyncCoverageRate =
+      dataset?.supabaseVectorCoverage?.syncCoverageRate ?? 0;
+    const readinessStatus = this.getFinalReportReadinessStatus({
+      analytics,
+      embeddingCoverageRate,
+      supabaseVectorSyncCoverageRate,
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      filters: {
+        ...(filters.startDate ? { startDate: filters.startDate } : {}),
+        ...(filters.endDate ? { endDate: filters.endDate } : {}),
+        ...(filters.wasteType ? { wasteType: filters.wasteType } : {}),
+      },
+      summary: {
+        totalAiQualityChecks: analytics.totalQualityChecks,
+        totalAdminDecisions: analytics.totalAdminDecisions,
+        agreementRate: analytics.agreementRate,
+        overrideRate: analytics.overrideRate,
+        averageConfidence: analytics.averageConfidence,
+        readinessStatus,
+      },
+      vision: {
+        visionLlmCount: analytics.visionUsage.vision_llm,
+        fallbackCount: analytics.visionUsage.fallback,
+        visionUsageRate: this.safeRatio(
+          analytics.visionUsage.vision_llm,
+          analytics.visionUsage.vision_llm + analytics.visionUsage.fallback,
+        ),
+      },
+      sopRag: {
+        ragCount: analytics.ragUsage.rag,
+        fallbackSopCount: analytics.ragUsage.fallback_sop,
+        ragUsageRate: this.safeRatio(
+          analytics.ragUsage.rag,
+          analytics.ragUsage.rag + analytics.ragUsage.fallback_sop,
+        ),
+      },
+      multimodalRag: {
+        usedCount: analytics.multimodalRag.usedCount,
+        usageRate: analytics.multimodalRag.usageRate,
+        providerUsage: {
+          supabase_pgvector:
+            analytics.multimodalRag.providerUsage?.supabase_pgvector ?? 0,
+          application_cosine:
+            analytics.multimodalRag.providerUsage?.application_cosine ?? 0,
+          fallback_none:
+            analytics.multimodalRag.providerUsage?.fallback_none ?? 0,
+          embedding_unavailable:
+            analytics.multimodalRag.providerUsage?.embedding_unavailable ?? 0,
+          unknown: analytics.multimodalRag.providerUsage?.unknown ?? 0,
+        },
+        averageTopSimilarity:
+          analytics.multimodalRag.retrievalQuality?.averageTopSimilarity ??
+          analytics.multimodalRag.averageTopSimilarityScore,
+        averageSimilarCaseCount:
+          analytics.multimodalRag.retrievalQuality?.averageSimilarCaseCount ??
+          analytics.multimodalRag.averageSimilarCaseCount,
+        noResultRetrievals:
+          analytics.multimodalRag.retrievalQuality?.noResultRetrievals ??
+          analytics.multimodalRag.noSimilarCaseCount,
+        embeddingUnavailableRetrievals:
+          analytics.multimodalRag.retrievalQuality
+            ?.embeddingUnavailableRetrievals ??
+          analytics.multimodalRag.embeddingUnavailableCount,
+      },
+      dataset: {
+        totalEligibleCases: dataset?.eligibleCases ?? 0,
+        embeddingCoverageRate,
+        supabaseVectorSyncCoverageRate,
+      },
+      qualityOutcomes: {
+        gradeDistributionAi: analytics.gradeDistribution.ai,
+        gradeDistributionAdmin: analytics.gradeDistribution.admin,
+        mostCommonOverrideReasons: analytics.primaryOverrideReasons ?? {},
+        mostCommonAiErrorPatterns: analytics.aiErrorPatterns ?? {},
+      },
+      recommendations: this.buildFinalReportRecommendations(
+        analytics,
+        embeddingCoverageRate,
+        supabaseVectorSyncCoverageRate,
+      ),
+      risks: this.buildFinalReportRisks(
+        analytics,
+        embeddingCoverageRate,
+        supabaseVectorSyncCoverageRate,
+      ),
+      demoReadinessChecklist: this.buildDemoReadinessChecklist(
+        analytics,
+        embeddingCoverageRate,
+        supabaseVectorSyncCoverageRate,
+      ),
+    };
+  }
+
   private isSubmissionOverridden(submission: WasteSubmission): boolean {
     return Boolean(
       submission.ai_quality_grade &&
         submission.quality_grade &&
         submission.ai_quality_grade !== submission.quality_grade,
     );
+  }
+
+  private getFinalReportReadinessStatus(input: {
+    analytics: QualityAiAnalytics;
+    embeddingCoverageRate: number;
+    supabaseVectorSyncCoverageRate: number;
+  }): FinalAiEvaluationReport['summary']['readinessStatus'] {
+    const { analytics, embeddingCoverageRate, supabaseVectorSyncCoverageRate } =
+      input;
+
+    if (
+      analytics.totalQualityChecks >= 10 &&
+      analytics.totalAdminDecisions >= 5 &&
+      analytics.agreementRate >= 0.7 &&
+      analytics.overrideRate <= 0.3 &&
+      analytics.multimodalRag.usageRate >= 0.5 &&
+      embeddingCoverageRate >= 0.8 &&
+      supabaseVectorSyncCoverageRate >= 0.8
+    ) {
+      return 'ready';
+    }
+
+    if (
+      analytics.totalQualityChecks >= 5 &&
+      analytics.totalAdminDecisions >= 3 &&
+      analytics.agreementRate >= 0.5 &&
+      embeddingCoverageRate >= 0.5
+    ) {
+      return 'partially_ready';
+    }
+
+    return 'not_ready';
+  }
+
+  private buildFinalReportRecommendations(
+    analytics: QualityAiAnalytics,
+    embeddingCoverageRate: number,
+    supabaseVectorSyncCoverageRate: number,
+  ): string[] {
+    const recommendations: string[] = [];
+
+    if (analytics.totalQualityChecks < 10) {
+      recommendations.push('Tambah sampel AI Quality Check untuk evaluasi.');
+    }
+    if (analytics.totalAdminDecisions < 5) {
+      recommendations.push('Selesaikan lebih banyak validasi admin.');
+    }
+    if (analytics.overrideRate > 0.3) {
+      recommendations.push('Audit AI error patterns dan prompt/SOP grading.');
+    }
+    if (analytics.agreementRate < 0.7) {
+      recommendations.push(
+        'Review kriteria grading dan kualitas observasi visual.',
+      );
+    }
+    if (analytics.multimodalRag.usageRate < 0.5) {
+      recommendations.push('Jalankan embedding/vector backfill.');
+    }
+    if ((analytics.multimodalRag.providerUsage?.supabase_pgvector ?? 0) === 0) {
+      recommendations.push('Periksa Supabase RPC dan vector sync coverage.');
+    }
+    if (
+      (analytics.multimodalRag.retrievalQuality?.noResultRetrievals ??
+        analytics.multimodalRag.noSimilarCaseCount) > 0
+    ) {
+      recommendations.push(
+        'Pertimbangkan menurunkan threshold atau menambah eligible historical cases.',
+      );
+    }
+    if (
+      (analytics.multimodalRag.retrievalQuality
+        ?.embeddingUnavailableRetrievals ??
+        analytics.multimodalRag.embeddingUnavailableCount) > 0
+    ) {
+      recommendations.push(
+        'Periksa provider embedding dan jalankan backfill embedding.',
+      );
+    }
+    if (supabaseVectorSyncCoverageRate < 0.8) {
+      recommendations.push('Jalankan Supabase vector backfill.');
+    }
+    if (embeddingCoverageRate < 0.8) {
+      recommendations.push('Tingkatkan embedding coverage eligible cases.');
+    }
+
+    return recommendations.length
+      ? recommendations
+      : ['Lanjutkan monitoring berkala dan dokumentasikan hasil demo.'];
+  }
+
+  private buildFinalReportRisks(
+    analytics: QualityAiAnalytics,
+    embeddingCoverageRate: number,
+    supabaseVectorSyncCoverageRate: number,
+  ): string[] {
+    const risks: string[] = [];
+
+    if (analytics.totalQualityChecks < 10) risks.push('Ukuran dataset masih rendah.');
+    if (embeddingCoverageRate < 0.8) risks.push('Embedding coverage masih rendah.');
+    if (analytics.overrideRate > 0.3) risks.push('Override admin masih tinggi.');
+    if (supabaseVectorSyncCoverageRate < 0.8) {
+      risks.push('Supabase vector sync coverage masih rendah.');
+    }
+    if (analytics.ragUsage.fallback_sop > analytics.ragUsage.rag) {
+      risks.push('Fallback SOP masih dominan dibanding Supabase RAG.');
+    }
+    if (analytics.visionUsage.fallback > analytics.visionUsage.vision_llm) {
+      risks.push('Vision fallback tinggi atau kualitas foto belum stabil.');
+    }
+
+    return risks.length ? risks : ['Tidak ada risiko dominan dari data saat ini.'];
+  }
+
+  private buildDemoReadinessChecklist(
+    analytics: QualityAiAnalytics,
+    embeddingCoverageRate: number,
+    supabaseVectorSyncCoverageRate: number,
+  ): FinalAiEvaluationReport['demoReadinessChecklist'] {
+    return [
+      {
+        label: 'AI Quality Check available',
+        status: analytics.totalQualityChecks > 0 ? 'pass' : 'fail',
+        detail: `${analytics.totalQualityChecks} AI Quality Check tercatat.`,
+      },
+      {
+        label: 'Vision-based observation available',
+        status: analytics.visionUsage.vision_llm > 0 ? 'pass' : 'warning',
+        detail: `${analytics.visionUsage.vision_llm} Vision LLM, ${analytics.visionUsage.fallback} fallback.`,
+      },
+      {
+        label: 'SOP RAG available',
+        status: analytics.ragUsage.rag > 0 ? 'pass' : 'warning',
+        detail: `${analytics.ragUsage.rag} Supabase RAG, ${analytics.ragUsage.fallback_sop} fallback SOP.`,
+      },
+      {
+        label: 'Multimodal RAG historical cases available',
+        status: analytics.multimodalRag.usedCount > 0 ? 'pass' : 'warning',
+        detail: `${analytics.multimodalRag.usedCount} quality checks memakai kasus historis.`,
+      },
+      {
+        label: 'Supabase pgvector retrieval active',
+        status:
+          (analytics.multimodalRag.providerUsage?.supabase_pgvector ?? 0) > 0
+            ? 'pass'
+            : 'warning',
+        detail: `${analytics.multimodalRag.providerUsage?.supabase_pgvector ?? 0} retrieval memakai Supabase pgvector.`,
+      },
+      {
+        label: 'Dataset embedding coverage',
+        status: embeddingCoverageRate >= 0.8 ? 'pass' : 'warning',
+        detail: `Embedding coverage ${Math.round(embeddingCoverageRate * 100)}%.`,
+      },
+      {
+        label: 'Supabase vector sync coverage',
+        status: supabaseVectorSyncCoverageRate >= 0.8 ? 'pass' : 'warning',
+        detail: `Vector sync coverage ${Math.round(supabaseVectorSyncCoverageRate * 100)}%.`,
+      },
+      {
+        label: 'Audit log analytics available',
+        status: analytics.totalAdminDecisions > 0 ? 'pass' : 'warning',
+        detail: `${analytics.totalAdminDecisions} keputusan admin tercatat.`,
+      },
+      {
+        label: 'Admin remains final validator',
+        status: 'pass',
+        detail: 'AI tetap recommendation-only.',
+      },
+      {
+        label: 'Dynamic Pricing uses final admin grade',
+        status: 'pass',
+        detail: 'Payout tetap mengikuti grade final admin.',
+      },
+    ];
   }
 
   private classifyAiErrorPattern(

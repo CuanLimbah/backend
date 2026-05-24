@@ -452,6 +452,66 @@ export interface QualityDatasetReadinessAnalytics {
   }>;
 }
 
+export interface FinalAiEvaluationReport {
+  generatedAt: string;
+  filters: {
+    startDate?: string;
+    endDate?: string;
+    wasteType?: WasteType;
+  };
+  summary: {
+    totalAiQualityChecks: number;
+    totalAdminDecisions: number;
+    agreementRate: number;
+    overrideRate: number;
+    averageConfidence: number | null;
+    readinessStatus: 'ready' | 'partially_ready' | 'not_ready';
+  };
+  vision: {
+    visionLlmCount: number;
+    fallbackCount: number;
+    visionUsageRate: number;
+  };
+  sopRag: {
+    ragCount: number;
+    fallbackSopCount: number;
+    ragUsageRate: number;
+  };
+  multimodalRag: {
+    usedCount: number;
+    usageRate: number;
+    providerUsage: {
+      supabase_pgvector: number;
+      application_cosine: number;
+      fallback_none: number;
+      embedding_unavailable: number;
+      unknown: number;
+    };
+    averageTopSimilarity: number | null;
+    averageSimilarCaseCount: number | null;
+    noResultRetrievals: number;
+    embeddingUnavailableRetrievals: number;
+  };
+  dataset: {
+    totalEligibleCases: number;
+    embeddingCoverageRate: number;
+    supabaseVectorSyncCoverageRate: number;
+  };
+  qualityOutcomes: {
+    gradeDistributionAi: Record<QualityGrade, number>;
+    gradeDistributionAdmin: Record<QualityGrade, number>;
+    mostCommonOverrideReasons: Record<string, number>;
+    mostCommonAiErrorPatterns: Record<string, number>;
+  };
+  recommendations: string[];
+  risks: string[];
+  demoReadinessChecklist: {
+    label: string;
+    status: 'pass' | 'warning' | 'fail';
+    detail: string;
+  }[];
+}
+
 export interface Transaction {
   id: string;
   user_id: string;

@@ -39,4 +39,19 @@ export class QualityAuditController {
 
     return analytics.multimodalRag.retrievalQuality;
   }
+
+  @Get('ai-final-report')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('admin')
+  getFinalAiEvaluationReport(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('wasteType') wasteType?: 'food' | 'oil',
+  ) {
+    return this.qualityAuditLogService.getFinalAiEvaluationReport({
+      startDate,
+      endDate,
+      wasteType,
+    });
+  }
 }

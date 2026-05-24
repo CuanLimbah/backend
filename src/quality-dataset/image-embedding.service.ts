@@ -27,6 +27,10 @@ export class ImageEmbeddingService {
   }): Promise<EmbeddingResult | null> {
     const text = this.buildVisualObservationText(input);
 
+    return this.generateFromVisualText(text);
+  }
+
+  async generateFromVisualText(text: string): Promise<EmbeddingResult | null> {
     if (!text || !this.hasEmbeddingKey()) {
       return null;
     }

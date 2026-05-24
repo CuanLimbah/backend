@@ -50,8 +50,10 @@ describe('QualityCaseDatasetService', () => {
   function createService(options?: {
     cases?: Array<Record<string, unknown>>;
     submissions?: Array<Record<string, unknown>>;
+    submissionById?: Record<string, unknown> | null;
     caseBySubmission?: Record<string, unknown> | null;
     embeddingResult?: Record<string, unknown> | null;
+    supabaseCases?: Array<Record<string, unknown>>;
   }) {
     const findOneAndUpdateQuery = execQuery({});
     const datasetModel = {
@@ -63,11 +65,24 @@ describe('QualityCaseDatasetService', () => {
     };
     const submissionModel = {
       find: jest.fn().mockReturnValue(findQuery(options?.submissions ?? [])),
+      findOne: jest
+        .fn()
+        .mockReturnValue(findQuery(options?.submissionById ?? null)),
     };
     const imageEmbeddingService = {
       generateForQualityCase: jest
         .fn()
         .mockResolvedValue(options?.embeddingResult ?? null),
+      generateFromVisualText: jest
+        .fn()
+        .mockResolvedValue(options?.embeddingResult ?? null),
+    };
+    const supabaseQualityVectorService = {
+      findSimilarCases: jest.fn().mockResolvedValue(options?.supabaseCases ?? []),
+      upsertCaseVector: jest.fn(),
+      syncCaseBySubmissionId: jest.fn(),
+      backfillCaseVectors: jest.fn(),
+      getVectorSyncStatus: jest.fn(),
     };
 
     return {
@@ -75,10 +90,12 @@ describe('QualityCaseDatasetService', () => {
         datasetModel as any,
         submissionModel as any,
         imageEmbeddingService as any,
+        supabaseQualityVectorService as any,
       ),
       datasetModel,
       submissionModel,
       imageEmbeddingService,
+      supabaseQualityVectorService,
       findOneAndUpdateQuery,
     };
   }
@@ -479,5 +496,181 @@ describe('QualityCaseDatasetService', () => {
         similarity: 1,
       }),
     );
+  });
+
+  it('retrieves similar cases for pending submission using temporary visual-text embedding', async () => {
+    const { service, imageEmbeddingService, supabaseQualityVectorService } =
+      createService({
+        caseBySubmission: null,
+        submissionById: {
+          ...eligibleSubmission,
+          id: 'sub-pending',
+          status: 'pending',
+          quality_grade: undefined,
+          quality_grade_source: undefined,
+          ai_quality_reason: 'Minyak agak gelap dengan endapan sedang.',
+        },
+        embeddingResult: {
+          embedding: [1, 0],
+          model: 'test',
+          source: 'visual_text_embedding',
+        },
+        supabaseCases: [
+          {
+            submission_id: 'sub-historical',
+            waste_type: 'oil',
+            final_quality_grade: 'B',
+            similarity: 0.9,
+            created_at: '2026-05-20T00:00:00.000Z',
+          },
+        ],
+      });
+
+    const result = await service.getSimilarCasesForSubmissionWithProvider(
+      'sub-pending',
+      { provider: 'auto', limit: 5, minSimilarity: 0.72 },
+    );
+
+    expect(imageEmbeddingService.generateFromVisualText).toHaveBeenCalledWith(
+      expect.stringContaining('AI quality reason: Minyak agak gelap'),
+    );
+    expect(supabaseQualityVectorService.findSimilarCases).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wasteType: 'oil',
+        embedding: [1, 0],
+        excludeSubmissionId: 'sub-pending',
+      }),
+    );
+    expect(result).toEqual({
+      provider: 'supabase_pgvector',
+      fallbackUsed: false,
+      cases: [
+        expect.objectContaining({
+          submission_id: 'sub-historical',
+          similarity: 0.9,
+        }),
+      ],
+    });
+  });
+
+  it('does not call generateEmbeddingForCase or sync current pending submission', async () => {
+    const { service, datasetModel, supabaseQualityVectorService } = createService({
+      caseBySubmission: {
+        ...eligibleSubmission,
+        submission_id: 'sub-pending',
+        eligibility_status: 'missing_final_grade',
+        image_embedding: undefined,
+      },
+      submissionById: {
+        ...eligibleSubmission,
+        id: 'sub-pending',
+        status: 'pending',
+        quality_grade: undefined,
+      },
+      embeddingResult: {
+        embedding: [1, 0],
+        model: 'test',
+        source: 'visual_text_embedding',
+      },
+    });
+
+    jest.spyOn(service, 'generateEmbeddingForCase');
+
+    await service.getSimilarCasesForSubmissionWithProvider('sub-pending');
+
+    expect(service.generateEmbeddingForCase).not.toHaveBeenCalled();
+    expect(datasetModel.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(supabaseQualityVectorService.upsertCaseVector).not.toHaveBeenCalled();
+  });
+
+  it('falls back to application cosine when Supabase returns no similar cases', async () => {
+    const { service } = createService({
+      caseBySubmission: null,
+      submissionById: {
+        ...eligibleSubmission,
+        id: 'sub-pending',
+        status: 'pending',
+      },
+      embeddingResult: {
+        embedding: [1, 0],
+        model: 'test',
+        source: 'visual_text_embedding',
+      },
+      supabaseCases: [],
+      cases: [
+        {
+          ...eligibleSubmission,
+          submission_id: 'sub-historical',
+          waste_type: 'oil',
+          image_embedding: [1, 0],
+          final_quality_grade: 'B',
+          eligibility_status: 'eligible',
+          image_embedding_status: 'ready',
+          similarity_search_ready: true,
+          created_at: '2026-05-20T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const result = await service.getSimilarCasesForSubmissionWithProvider(
+      'sub-pending',
+      { provider: 'auto', minSimilarity: 0.7 },
+    );
+
+    expect(result.provider).toBe('application_cosine');
+    expect(result.fallbackUsed).toBe(true);
+    expect(result.cases).toHaveLength(1);
+  });
+
+  it('returns fallback_none when no provider finds similar cases', async () => {
+    const { service } = createService({
+      caseBySubmission: null,
+      submissionById: {
+        ...eligibleSubmission,
+        id: 'sub-pending',
+        status: 'pending',
+      },
+      embeddingResult: {
+        embedding: [1, 0],
+        model: 'test',
+        source: 'visual_text_embedding',
+      },
+      supabaseCases: [],
+      cases: [],
+    });
+
+    const result = await service.getSimilarCasesForSubmissionWithProvider(
+      'sub-pending',
+    );
+
+    expect(result).toEqual({
+      provider: 'fallback_none',
+      fallbackUsed: true,
+      cases: [],
+    });
+  });
+
+  it('returns embedding_unavailable when pending submission lacks visual text', async () => {
+    const { service } = createService({
+      caseBySubmission: null,
+      submissionById: {
+        ...eligibleSubmission,
+        id: 'sub-pending',
+        status: 'pending',
+        image_url: undefined,
+        ai_quality_reason: undefined,
+        ai_visual_observations: undefined,
+      },
+    });
+
+    const result = await service.getSimilarCasesForSubmissionWithProvider(
+      'sub-pending',
+    );
+
+    expect(result).toEqual({
+      provider: 'embedding_unavailable',
+      fallbackUsed: false,
+      cases: [],
+    });
   });
 });
