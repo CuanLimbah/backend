@@ -187,10 +187,98 @@ function getMultimodalRagInterpretation(
       '- Banyak AI Quality Check belum menemukan kasus historis mirip. Dataset eligible atau embedding coverage perlu ditingkatkan.',
     );
   }
+  if ((multimodal.providerUsage?.application_cosine ?? 0) > 0) {
+    notes.push(
+      '- Sebagian retrieval masih memakai fallback application-level cosine similarity.',
+    );
+  }
+  if ((multimodal.providerUsage?.supabase_pgvector ?? 0) > 0) {
+    notes.push(
+      '- Supabase pgvector sudah digunakan sebagai production vector search.',
+    );
+  }
 
   return notes.length
     ? notes.join('\n')
     : '- Belum ada sinyal risiko dominan pada Multimodal RAG.';
+}
+
+function formatThresholdBuckets(buckets?: Record<string, number>): string {
+  const orderedBuckets = [
+    '0.00-0.59',
+    '0.60-0.69',
+    '0.70-0.79',
+    '0.80-0.89',
+    '0.90-1.00',
+  ];
+
+  return orderedBuckets
+    .map((bucket) => `- ${bucket}: ${formatNumber(buckets?.[bucket] ?? 0)}`)
+    .join('\n');
+}
+
+function getRetrievalQualityInterpretation(
+  retrievalQuality: NonNullable<
+    QualityAiAnalytics['multimodalRag']['retrievalQuality']
+  >,
+): string {
+  const notes: string[] = [];
+
+  if (retrievalQuality.noResultRetrievals > retrievalQuality.totalRetrievals * 0.3) {
+    notes.push(
+      '- Banyak retrieval tidak menemukan kasus mirip. Threshold mungkin terlalu ketat atau dataset belum cukup.',
+    );
+  }
+  if (retrievalQuality.lowSimilarityRate > 0.3) {
+    notes.push(
+      '- Low similarity rate tinggi. Kualitas visual observation text atau threshold perlu ditinjau.',
+    );
+  }
+  if (
+    retrievalQuality.supabaseRetrievals >
+    retrievalQuality.applicationFallbackRetrievals
+  ) {
+    notes.push('- Supabase pgvector mulai menjadi retrieval utama.');
+  }
+  if (
+    retrievalQuality.applicationFallbackRetrievals >=
+      retrievalQuality.supabaseRetrievals &&
+    retrievalQuality.applicationFallbackRetrievals > 0
+  ) {
+    notes.push(
+      '- Fallback application cosine masih sering digunakan. Periksa Supabase sync coverage dan RPC.',
+    );
+  }
+
+  return notes.length
+    ? notes.join('\n')
+    : '- Retrieval quality belum menunjukkan sinyal tuning dominan.';
+}
+
+function getDefaultRetrievalQuality(): NonNullable<
+  QualityAiAnalytics['multimodalRag']['retrievalQuality']
+> {
+  return {
+    totalRetrievals: 0,
+    supabaseRetrievals: 0,
+    applicationFallbackRetrievals: 0,
+    noResultRetrievals: 0,
+    embeddingUnavailableRetrievals: 0,
+    averageTopSimilarity: null,
+    averageSimilarCaseCount: null,
+    lowSimilarityCount: 0,
+    lowSimilarityRate: 0,
+    highSimilarityCount: 0,
+    highSimilarityRate: 0,
+    byThresholdBucket: {},
+    byProvider: {},
+    currentConfig: {
+      topK: 5,
+      minSimilarity: 0.72,
+      provider: 'supabase_pgvector',
+    },
+    recommendation: 'Belum ada data retrieval Multimodal RAG untuk dituning.',
+  };
 }
 
 function getFilterDescription(input: {
@@ -382,6 +470,16 @@ function getActionRecommendations(analytics: QualityAiAnalytics): string {
       '- Pertahankan retrieval kasus historis sebagai konteks tambahan, tetapi admin tetap harus validasi akhir.',
     );
   }
+  if ((analytics.multimodalRag.providerUsage?.application_cosine ?? 0) > 0) {
+    recommendations.push(
+      '- Supabase vector search belum dominan. Periksa Supabase vector sync coverage dan RPC.',
+    );
+  }
+  if ((analytics.multimodalRag.providerUsage?.supabase_pgvector ?? 0) > 0) {
+    recommendations.push(
+      '- Production vector search sudah aktif sebagai retrieval utama.',
+    );
+  }
   if (
     analytics.multimodalRag.adminDecisionCountWhenUsed > 0 &&
     analytics.multimodalRag.adminDecisionCountWhenNotUsed > 0 &&
@@ -402,6 +500,9 @@ function buildExplanation(
   analytics: QualityAiAnalytics,
   filters: { startDate?: string; endDate?: string; wasteType?: WasteType },
 ): string {
+  const retrievalQuality =
+    analytics.multimodalRag.retrievalQuality ?? getDefaultRetrievalQuality();
+
   return [
     'RINGKASAN AI QUALITY ANALYTICS',
     `- Total AI Quality Check: ${formatNumber(analytics.totalQualityChecks)}`,
@@ -480,9 +581,60 @@ function buildExplanation(
     `- Confidence saat tidak digunakan: ${formatPercent(
       analytics.multimodalRag.averageConfidenceWhenNotUsed,
     )}`,
+    `- Provider Supabase pgvector: ${formatNumber(
+      analytics.multimodalRag.providerUsage?.supabase_pgvector,
+    )}`,
+    `- Provider application cosine fallback: ${formatNumber(
+      analytics.multimodalRag.providerUsage?.application_cosine,
+    )}`,
+    `- Provider fallback none: ${formatNumber(
+      analytics.multimodalRag.providerUsage?.fallback_none,
+    )}`,
+    `- Provider embedding unavailable: ${formatNumber(
+      analytics.multimodalRag.providerUsage?.embedding_unavailable,
+    )}`,
+    `- Provider unknown: ${formatNumber(
+      analytics.multimodalRag.providerUsage?.unknown,
+    )}`,
     '',
     'INTERPRETASI MULTIMODAL RAG',
     getMultimodalRagInterpretation(analytics.multimodalRag),
+    '',
+    'RETRIEVAL QUALITY TUNING',
+    `- Total retrievals: ${formatNumber(retrievalQuality.totalRetrievals)}`,
+    `- Supabase retrievals: ${formatNumber(
+      retrievalQuality.supabaseRetrievals,
+    )}`,
+    `- Application fallback retrievals: ${formatNumber(
+      retrievalQuality.applicationFallbackRetrievals,
+    )}`,
+    `- No result retrievals: ${formatNumber(
+      retrievalQuality.noResultRetrievals,
+    )}`,
+    `- Embedding unavailable retrievals: ${formatNumber(
+      retrievalQuality.embeddingUnavailableRetrievals,
+    )}`,
+    `- Average top similarity: ${formatPercent(
+      retrievalQuality.averageTopSimilarity,
+    )}`,
+    `- Average similar case count: ${formatNumber(
+      retrievalQuality.averageSimilarCaseCount,
+    )}`,
+    `- Low similarity: ${formatNumber(
+      retrievalQuality.lowSimilarityCount,
+    )} (${formatPercent(retrievalQuality.lowSimilarityRate)})`,
+    `- High similarity: ${formatNumber(
+      retrievalQuality.highSimilarityCount,
+    )} (${formatPercent(retrievalQuality.highSimilarityRate)})`,
+    '- Threshold buckets:',
+    formatThresholdBuckets(retrievalQuality.byThresholdBucket),
+    `- Current topK: ${formatNumber(retrievalQuality.currentConfig.topK)}`,
+    `- Current minSimilarity: ${formatPercent(
+      retrievalQuality.currentConfig.minSimilarity,
+    )}`,
+    `- Current provider: ${retrievalQuality.currentConfig.provider}`,
+    `- Recommendation: ${retrievalQuality.recommendation}`,
+    getRetrievalQualityInterpretation(retrievalQuality),
     '',
     'DISTRIBUSI GRADE',
     'AI Recommendation:',
@@ -506,6 +658,7 @@ function buildExplanation(
     'CATATAN KEAMANAN',
     'Analytics ini hanya digunakan untuk evaluasi performa AI. AI tidak otomatis menentukan grade final, payout, wallet, atau transaksi. Admin tetap menjadi validator akhir.',
     'Multimodal RAG hanya memberi konteks tambahan dari kasus historis. AI tidak otomatis menentukan grade final, payout, wallet, atau transaksi. Admin tetap menjadi validator akhir.',
+    'Retrieval quality tuning hanya mengevaluasi konteks tambahan. AI tidak otomatis menentukan grade final, payout, wallet, atau transaksi. Admin tetap validator akhir.',
   ].join('\n');
 }
 

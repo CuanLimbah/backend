@@ -9,6 +9,7 @@ import type {
   QualityFeedbackTag,
   QualityGrade,
   QualityGradeSource,
+  QualityVectorProvider,
   VisionAssessmentSource,
   WasteSubmission,
 } from '../../common/models';
@@ -168,6 +169,17 @@ export class WasteSubmissionEntity implements WasteSubmission {
     ] satisfies MultimodalRagSource[],
   })
   ai_multimodal_rag_source?: MultimodalRagSource;
+
+  @Prop({
+    type: String,
+    enum: [
+      'application_cosine',
+      'supabase_pgvector',
+      'fallback_none',
+      'embedding_unavailable',
+    ] satisfies QualityVectorProvider[],
+  })
+  ai_multimodal_rag_provider?: QualityVectorProvider;
 
   @Prop()
   ai_multimodal_rag_model?: string;

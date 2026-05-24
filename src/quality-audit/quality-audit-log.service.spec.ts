@@ -204,6 +204,7 @@ describe('QualityAuditLogService', () => {
         ai_visual_source: 'vision_llm',
         ai_multimodal_rag_used: true,
         ai_multimodal_rag_source: 'similar_quality_cases',
+        ai_multimodal_rag_provider: 'supabase_pgvector',
         ai_similar_case_count: 3,
         ai_similar_case_top_score: 0.82,
         is_overridden: false,
@@ -218,6 +219,7 @@ describe('QualityAuditLogService', () => {
         ai_visual_source: 'fallback',
         ai_multimodal_rag_used: false,
         ai_multimodal_rag_source: 'embedding_unavailable',
+        ai_multimodal_rag_provider: 'embedding_unavailable',
         is_overridden: false,
         created_at: '2026-05-21T00:00:00.000Z',
       },
@@ -228,6 +230,7 @@ describe('QualityAuditLogService', () => {
         final_quality_grade: 'B',
         ai_multimodal_rag_used: true,
         ai_multimodal_rag_source: 'similar_quality_cases',
+        ai_multimodal_rag_provider: 'supabase_pgvector',
         is_overridden: false,
         created_at: '2026-05-21T01:00:00.000Z',
       },
@@ -247,6 +250,7 @@ describe('QualityAuditLogService', () => {
         ai_quality_confidence: 0.4,
         ai_multimodal_rag_used: false,
         ai_multimodal_rag_source: 'embedding_unavailable',
+        ai_multimodal_rag_provider: 'embedding_unavailable',
         admin_quality_notes: 'Inspeksi manual lebih bersih.',
         is_overridden: true,
         override_from: 'C',
@@ -303,6 +307,31 @@ describe('QualityAuditLogService', () => {
         unknown: 0,
       }),
     );
+    expect(analytics.multimodalRag.providerUsage).toEqual(
+      expect.objectContaining({
+        supabase_pgvector: 1,
+        embedding_unavailable: 1,
+        application_cosine: 0,
+        fallback_none: 0,
+      }),
+    );
+    expect(analytics.multimodalRag.retrievalQuality).toEqual(
+      expect.objectContaining({
+        totalRetrievals: 2,
+        supabaseRetrievals: 1,
+        embeddingUnavailableRetrievals: 1,
+        averageTopSimilarity: 0.82,
+        averageSimilarCaseCount: 3,
+        highSimilarityCount: 1,
+      }),
+    );
+    expect(
+      analytics.multimodalRag.retrievalQuality?.byThresholdBucket['0.80-0.89'],
+    ).toBe(1);
+    expect(
+      analytics.multimodalRag.retrievalQuality?.byProvider.supabase_pgvector
+        .totalRetrievals,
+    ).toBe(1);
     expect(analytics.multimodalRag.byWasteType.oil.usedCount).toBe(1);
     expect(analytics.multimodalRag.byWasteType.food.usedCount).toBe(0);
     expect(analytics.byWasteType.food.adminOverrideCount).toBe(1);

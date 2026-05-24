@@ -27,6 +27,13 @@ const baseAnalytics: QualityDatasetReadinessAnalytics = {
     missingEmbeddingCases: 2,
     embeddingCoverageRate: 0.75,
   },
+  supabaseVectorCoverage: {
+    totalEligibleCases: 8,
+    syncedCases: 5,
+    unsyncedCases: 3,
+    failedSyncCases: 1,
+    syncCoverageRate: 0.625,
+  },
   recentEligibleCases: [],
 };
 
@@ -87,6 +94,8 @@ describe('explain_quality_dataset_readiness tool', () => {
     expect(result).toContain('Dataset cukup siap untuk tahap Multimodal RAG MVP.');
     expect(result).toContain('EMBEDDING COVERAGE');
     expect(result).toContain('Embedded cases: 6');
+    expect(result).toContain('SUPABASE VECTOR SYNC');
+    expect(result).toContain('Synced cases: 5');
   });
 
   it('returns not-ready interpretation for low eligibility rate', async () => {
@@ -128,9 +137,12 @@ describe('explain_quality_dataset_readiness tool', () => {
     );
 
     expect(result).toContain('Embedding coverage sebagian siap.');
+    expect(result).toContain('Supabase vector sync sebagian siap');
     expect(result).toContain(
       'Jalankan backfill embedding visual-text untuk eligible quality cases.',
     );
+    expect(result).toContain('Jalankan Supabase vector backfill.');
+    expect(result).toContain('Periksa error sinkronisasi Supabase vector.');
   });
 
   it('explains the MVP safety note without claiming true image embedding', async () => {

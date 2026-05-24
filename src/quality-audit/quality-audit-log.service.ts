@@ -8,6 +8,7 @@ import type {
   QualityAuditLog,
   QualityFeedbackTag,
   QualityGrade,
+  QualityVectorProvider,
   WasteSubmission,
   WasteType,
 } from '../common/models';
@@ -74,6 +75,7 @@ export class QualityAuditLogService {
       ai_visual_observations: submission.ai_visual_observations,
       ai_multimodal_rag_used: submission.ai_multimodal_rag_used,
       ai_multimodal_rag_source: submission.ai_multimodal_rag_source,
+      ai_multimodal_rag_provider: submission.ai_multimodal_rag_provider,
       ai_similar_case_ids: submission.ai_similar_case_ids,
       ai_similar_case_count: submission.ai_similar_case_count,
       ai_similar_case_top_score: submission.ai_similar_case_top_score,
@@ -380,6 +382,8 @@ export class QualityAuditLogService {
         'embedding_unavailable',
         'unknown',
       ]) as QualityAiAnalytics['multimodalRag']['sourceUsage'],
+      providerUsage: this.buildMultimodalProviderUsage(aiLogs),
+      retrievalQuality: this.buildRetrievalQualityAnalytics(logs),
       byWasteType: {
         food: this.buildMultimodalWasteTypeAnalytics(logs, 'food'),
         oil: this.buildMultimodalWasteTypeAnalytics(logs, 'oil'),
@@ -425,6 +429,239 @@ export class QualityAuditLogService {
         notUsedAdminLogs.length,
       ),
     };
+  }
+
+  private buildMultimodalProviderUsage(
+    aiLogs: QualityAuditLog[],
+  ): NonNullable<QualityAiAnalytics['multimodalRag']['providerUsage']> {
+    return aiLogs.reduce<NonNullable<QualityAiAnalytics['multimodalRag']['providerUsage']>>(
+      (counts, log) => {
+        const provider = this.getMultimodalProvider(log);
+        counts[provider] = (counts[provider] ?? 0) + 1;
+        return counts;
+      },
+      {
+        application_cosine: 0,
+        supabase_pgvector: 0,
+        fallback_none: 0,
+        embedding_unavailable: 0,
+        unknown: 0,
+      },
+    );
+  }
+
+  private getMultimodalProvider(
+    log: QualityAuditLog,
+  ): keyof NonNullable<QualityAiAnalytics['multimodalRag']['providerUsage']> {
+    if (log.ai_multimodal_rag_provider) {
+      return log.ai_multimodal_rag_provider;
+    }
+    if (log.ai_multimodal_rag_source === 'embedding_unavailable') {
+      return 'embedding_unavailable';
+    }
+    if (log.ai_multimodal_rag_source === 'none') {
+      return 'fallback_none';
+    }
+    if (log.ai_multimodal_rag_source === 'similar_quality_cases') {
+      return 'application_cosine';
+    }
+    return 'unknown';
+  }
+
+  private buildRetrievalQualityAnalytics(
+    logs: QualityAuditLog[],
+  ): NonNullable<QualityAiAnalytics['multimodalRag']['retrievalQuality']> {
+    const aiLogs = logs.filter((log) => log.event_type === 'ai_quality_checked');
+    const retrievalLogs = aiLogs.filter(
+      (log) =>
+        log.ai_multimodal_rag_source ||
+        log.ai_multimodal_rag_provider ||
+        typeof log.ai_similar_case_count === 'number' ||
+        typeof log.ai_similar_case_top_score === 'number',
+    );
+    const comparableAdminLogs = logs.filter(
+      (log) =>
+        ['admin_verified', 'admin_overridden'].includes(log.event_type) &&
+        log.ai_quality_grade &&
+        log.final_quality_grade,
+    );
+    const topScores = retrievalLogs
+      .map((log) => log.ai_similar_case_top_score)
+      .filter((value): value is number => typeof value === 'number');
+    const similarCounts = retrievalLogs
+      .map((log) => log.ai_similar_case_count)
+      .filter((value): value is number => typeof value === 'number');
+    const lowSimilarityCount = retrievalLogs.filter(
+      (log) =>
+        log.ai_multimodal_rag_source === 'similar_quality_cases' &&
+        typeof log.ai_similar_case_top_score === 'number' &&
+        log.ai_similar_case_top_score < 0.72,
+    ).length;
+    const highSimilarityCount = topScores.filter((score) => score >= 0.8).length;
+    const byProvider = this.buildRetrievalQualityByProvider(
+      retrievalLogs,
+      comparableAdminLogs,
+    );
+
+    return {
+      totalRetrievals: retrievalLogs.length,
+      supabaseRetrievals: retrievalLogs.filter(
+        (log) => this.getMultimodalProvider(log) === 'supabase_pgvector',
+      ).length,
+      applicationFallbackRetrievals: retrievalLogs.filter(
+        (log) => this.getMultimodalProvider(log) === 'application_cosine',
+      ).length,
+      noResultRetrievals: retrievalLogs.filter(
+        (log) =>
+          this.getMultimodalProvider(log) === 'fallback_none' ||
+          log.ai_multimodal_rag_source === 'none',
+      ).length,
+      embeddingUnavailableRetrievals: retrievalLogs.filter(
+        (log) =>
+          this.getMultimodalProvider(log) === 'embedding_unavailable' ||
+          log.ai_multimodal_rag_source === 'embedding_unavailable',
+      ).length,
+      averageTopSimilarity: this.average(topScores),
+      averageSimilarCaseCount: this.average(similarCounts),
+      lowSimilarityCount,
+      lowSimilarityRate: this.safeRatio(lowSimilarityCount, topScores.length),
+      highSimilarityCount,
+      highSimilarityRate: this.safeRatio(highSimilarityCount, topScores.length),
+      byThresholdBucket: this.buildThresholdBuckets(topScores),
+      byProvider,
+      currentConfig: {
+        provider: process.env.QUALITY_CASE_VECTOR_PROVIDER || 'supabase_pgvector',
+        topK: Number(process.env.QUALITY_CASE_VECTOR_TOP_K) || 5,
+        minSimilarity:
+          Number(process.env.QUALITY_CASE_VECTOR_MATCH_THRESHOLD) || 0.72,
+      },
+      recommendation: this.buildRetrievalQualityRecommendation({
+        totalRetrievals: retrievalLogs.length,
+        supabaseRetrievals: retrievalLogs.filter(
+          (log) => this.getMultimodalProvider(log) === 'supabase_pgvector',
+        ).length,
+        embeddingUnavailableRetrievals: retrievalLogs.filter(
+          (log) =>
+            this.getMultimodalProvider(log) === 'embedding_unavailable' ||
+            log.ai_multimodal_rag_source === 'embedding_unavailable',
+        ).length,
+        noResultRetrievals: retrievalLogs.filter(
+          (log) =>
+            this.getMultimodalProvider(log) === 'fallback_none' ||
+            log.ai_multimodal_rag_source === 'none',
+        ).length,
+        averageTopSimilarity: this.average(topScores),
+        byProvider,
+      }),
+    };
+  }
+
+  private buildRetrievalQualityByProvider(
+    retrievalLogs: QualityAuditLog[],
+    comparableAdminLogs: QualityAuditLog[],
+  ): NonNullable<
+    QualityAiAnalytics['multimodalRag']['retrievalQuality']
+  >['byProvider'] {
+    const providers: Array<QualityVectorProvider | 'unknown'> = [
+      'supabase_pgvector',
+      'application_cosine',
+      'fallback_none',
+      'embedding_unavailable',
+      'unknown',
+    ];
+
+    return Object.fromEntries(
+      providers.map((provider) => {
+        const providerRetrievalLogs = retrievalLogs.filter(
+          (log) => this.getMultimodalProvider(log) === provider,
+        );
+        const providerAdminLogs = comparableAdminLogs.filter(
+          (log) => this.getMultimodalProvider(log) === provider,
+        );
+        const overrideCount = providerAdminLogs.filter(
+          (log) => log.is_overridden,
+        ).length;
+        const topScores = providerRetrievalLogs
+          .map((log) => log.ai_similar_case_top_score)
+          .filter((value): value is number => typeof value === 'number');
+        const similarCounts = providerRetrievalLogs
+          .map((log) => log.ai_similar_case_count)
+          .filter((value): value is number => typeof value === 'number');
+
+        return [
+          provider,
+          {
+            totalRetrievals: providerRetrievalLogs.length,
+            averageTopSimilarity: this.average(topScores),
+            averageSimilarCaseCount: this.average(similarCounts),
+            overrideRate: this.safeRatio(overrideCount, providerAdminLogs.length),
+            agreementRate: this.safeRatio(
+              providerAdminLogs.length - overrideCount,
+              providerAdminLogs.length,
+            ),
+          },
+        ];
+      }),
+    );
+  }
+
+  private buildThresholdBuckets(topScores: number[]): Record<string, number> {
+    const buckets = {
+      '0.00-0.59': 0,
+      '0.60-0.69': 0,
+      '0.70-0.79': 0,
+      '0.80-0.89': 0,
+      '0.90-1.00': 0,
+    };
+
+    for (const score of topScores) {
+      if (score < 0.6) buckets['0.00-0.59'] += 1;
+      else if (score < 0.7) buckets['0.60-0.69'] += 1;
+      else if (score < 0.8) buckets['0.70-0.79'] += 1;
+      else if (score < 0.9) buckets['0.80-0.89'] += 1;
+      else buckets['0.90-1.00'] += 1;
+    }
+
+    return buckets;
+  }
+
+  private buildRetrievalQualityRecommendation(input: {
+    totalRetrievals: number;
+    supabaseRetrievals: number;
+    embeddingUnavailableRetrievals: number;
+    noResultRetrievals: number;
+    averageTopSimilarity: number | null;
+    byProvider: NonNullable<
+      QualityAiAnalytics['multimodalRag']['retrievalQuality']
+    >['byProvider'];
+  }): string {
+    if (input.totalRetrievals === 0) {
+      return 'Belum ada data retrieval Multimodal RAG untuk dituning.';
+    }
+    if (input.supabaseRetrievals === 0) {
+      return 'Supabase pgvector belum digunakan. Jalankan Supabase vector backfill dan pastikan RPC aktif.';
+    }
+    if (
+      this.safeRatio(input.embeddingUnavailableRetrievals, input.totalRetrievals) >
+      0.2
+    ) {
+      return 'Embedding visual-text sering tidak tersedia. Jalankan backfill embedding dan periksa provider embedding.';
+    }
+    if (this.safeRatio(input.noResultRetrievals, input.totalRetrievals) > 0.3) {
+      return 'Banyak retrieval tidak menemukan kasus mirip. Pertimbangkan menurunkan threshold atau menambah dataset eligible.';
+    }
+    if (input.averageTopSimilarity != null && input.averageTopSimilarity < 0.72) {
+      return 'Rata-rata similarity masih rendah. Evaluasi kualitas visual observation text dan threshold.';
+    }
+    if (
+      input.averageTopSimilarity != null &&
+      input.averageTopSimilarity >= 0.8 &&
+      input.byProvider.supabase_pgvector.overrideRate <
+        input.byProvider.application_cosine.overrideRate
+    ) {
+      return 'Konfigurasi retrieval saat ini terlihat baik untuk Supabase pgvector.';
+    }
+    return 'Lanjutkan monitoring dan bandingkan threshold/topK dengan data tambahan.';
   }
 
   private countBy<T extends QualityAuditLog>(

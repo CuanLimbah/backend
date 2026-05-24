@@ -11,6 +11,7 @@ import type {
   QualityFeedbackTag,
   QualityGrade,
   QualityGradeSource,
+  QualityVectorProvider,
   VisionAssessmentSource,
   WasteType,
 } from '../../common/models';
@@ -91,6 +92,17 @@ export class QualityAuditLogEntity implements QualityAuditLog {
 
   @Prop({ type: String })
   ai_multimodal_rag_source?: MultimodalRagSource;
+
+  @Prop({
+    type: String,
+    enum: [
+      'application_cosine',
+      'supabase_pgvector',
+      'fallback_none',
+      'embedding_unavailable',
+    ] satisfies QualityVectorProvider[],
+  })
+  ai_multimodal_rag_provider?: QualityVectorProvider;
 
   @Prop({ type: [String], default: undefined })
   ai_similar_case_ids?: string[];

@@ -16,6 +16,7 @@ describe('QualityAssessmentService', () => {
     visualObservation?: Record<string, unknown>;
     embeddingResult?: Record<string, unknown> | null;
     similarCases?: Array<Record<string, unknown>>;
+    configValues?: Record<string, string | undefined>;
   }) {
     const submission =
       overrides?.submission === null
@@ -67,7 +68,7 @@ describe('QualityAssessmentService', () => {
       getSourceForObservation: jest.fn().mockReturnValue('vision_llm'),
     };
     const config = {
-      get: jest.fn().mockReturnValue(undefined),
+      get: jest.fn((key: string) => overrides?.configValues?.[key]),
     };
     const qualityAuditLogService = {
       logAiQualityChecked: jest.fn().mockResolvedValue(undefined),
@@ -413,6 +414,8 @@ describe('QualityAssessmentService', () => {
         wasteType: 'oil',
         embedding: [1, 0],
         excludeSubmissionId: 'sub-1',
+        limit: 5,
+        minSimilarity: 0.72,
       }),
     );
     expect(qualityCaseDatasetService.buildSimilarCasesContext).toHaveBeenCalled();
@@ -427,6 +430,62 @@ describe('QualityAssessmentService', () => {
         ai_similar_case_top_score: 0.86,
       }),
       { new: true },
+    );
+  });
+
+  it('uses configured topK and minSimilarity for multimodal retrieval', async () => {
+    const { service, qualityCaseDatasetService } = createService({
+      embeddingResult: {
+        embedding: [1, 0],
+        model: 'test-embedding-model',
+        source: 'visual_text_embedding',
+      },
+      similarCases: [],
+      configValues: {
+        QUALITY_CASE_VECTOR_TOP_K: '8',
+        QUALITY_CASE_VECTOR_MATCH_THRESHOLD: '0.81',
+      },
+    });
+
+    await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Minyak agak keruh.',
+    });
+
+    expect(qualityCaseDatasetService.findSimilarCases).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limit: 8,
+        minSimilarity: 0.81,
+      }),
+    );
+  });
+
+  it('clamps configured topK and minSimilarity safely', async () => {
+    const { service, qualityCaseDatasetService } = createService({
+      embeddingResult: {
+        embedding: [1, 0],
+        model: 'test-embedding-model',
+        source: 'visual_text_embedding',
+      },
+      similarCases: [],
+      configValues: {
+        QUALITY_CASE_VECTOR_TOP_K: '999',
+        QUALITY_CASE_VECTOR_MATCH_THRESHOLD: '9',
+      },
+    });
+
+    await service.analyzeSubmissionQuality({
+      submissionId: 'sub-1',
+      requestedBy: 'admin-1',
+      conditionDescription: 'Minyak agak keruh.',
+    });
+
+    expect(qualityCaseDatasetService.findSimilarCases).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limit: 20,
+        minSimilarity: 1,
+      }),
     );
   });
 

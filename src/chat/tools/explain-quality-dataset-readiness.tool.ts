@@ -50,6 +50,17 @@ function getEmbeddingCoverageInterpretation(rate?: number): string {
   return 'Embedding coverage belum cukup.';
 }
 
+function getSupabaseVectorCoverageInterpretation(rate?: number): string {
+  if (rate == null) return 'Supabase vector sync coverage belum tersedia.';
+  if (rate >= 0.8) {
+    return 'Supabase vector sync cukup siap untuk production vector search.';
+  }
+  if (rate >= 0.5) {
+    return 'Supabase vector sync sebagian siap, tetapi masih perlu backfill.';
+  }
+  return 'Supabase vector sync belum siap.';
+}
+
 function getRecommendations(analytics: QualityDatasetReadinessAnalytics): string {
   const recommendations: string[] = [];
 
@@ -71,6 +82,12 @@ function getRecommendations(analytics: QualityDatasetReadinessAnalytics): string
     recommendations.push(
       '- Jalankan backfill embedding visual-text untuk eligible quality cases.',
     );
+  }
+  if ((analytics.supabaseVectorCoverage?.unsyncedCases ?? 0) > 0) {
+    recommendations.push('- Jalankan Supabase vector backfill.');
+  }
+  if ((analytics.supabaseVectorCoverage?.failedSyncCases ?? 0) > 0) {
+    recommendations.push('- Periksa error sinkronisasi Supabase vector.');
   }
 
   return recommendations.length
@@ -141,6 +158,30 @@ function buildExplanation(
     `- ${getEmbeddingCoverageInterpretation(
       analytics.embeddingCoverage?.embeddingCoverageRate,
     )}`,
+    '',
+    'SUPABASE VECTOR SYNC',
+    `- Total eligible cases: ${formatNumber(
+      analytics.supabaseVectorCoverage?.totalEligibleCases,
+    )}`,
+    `- Synced cases: ${formatNumber(
+      analytics.supabaseVectorCoverage?.syncedCases,
+    )}`,
+    `- Unsynced cases: ${formatNumber(
+      analytics.supabaseVectorCoverage?.unsyncedCases,
+    )}`,
+    `- Failed sync cases: ${formatNumber(
+      analytics.supabaseVectorCoverage?.failedSyncCases,
+    )}`,
+    `- Sync coverage rate: ${formatPercent(
+      analytics.supabaseVectorCoverage?.syncCoverageRate,
+    )}`,
+    `- ${getSupabaseVectorCoverageInterpretation(
+      analytics.supabaseVectorCoverage?.syncCoverageRate,
+    )}`,
+    '- Setelah sync coverage cukup, gunakan Retrieval Quality Tuning untuk memilih threshold dan topK terbaik.',
+    (analytics.supabaseVectorCoverage?.syncCoverageRate ?? 0) < 0.8
+      ? '- Jangan finalisasi tuning threshold sebelum Supabase vector sync coverage cukup.'
+      : '- Supabase vector sync coverage sudah cukup untuk mulai tuning threshold/topK.',
     '',
     'REKOMENDASI PERBAIKAN DATA',
     getRecommendations(analytics),

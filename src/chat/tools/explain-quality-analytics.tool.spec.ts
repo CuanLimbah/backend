@@ -59,6 +59,13 @@ const baseAnalytics: QualityAiAnalytics = {
       embedding_unavailable: 2,
       unknown: 0,
     },
+    providerUsage: {
+      supabase_pgvector: 6,
+      application_cosine: 2,
+      fallback_none: 2,
+      embedding_unavailable: 2,
+      unknown: 0,
+    },
     byWasteType: {
       food: {
         totalAiQualityChecks: 4,
@@ -76,6 +83,34 @@ const baseAnalytics: QualityAiAnalytics = {
         overrideRateWhenUsed: 0.12,
         overrideRateWhenNotUsed: 0.28,
       },
+    },
+    retrievalQuality: {
+      totalRetrievals: 12,
+      supabaseRetrievals: 6,
+      applicationFallbackRetrievals: 2,
+      noResultRetrievals: 2,
+      embeddingUnavailableRetrievals: 2,
+      averageTopSimilarity: 0.81,
+      averageSimilarCaseCount: 3,
+      lowSimilarityCount: 1,
+      lowSimilarityRate: 0.08,
+      highSimilarityCount: 7,
+      highSimilarityRate: 0.58,
+      byThresholdBucket: {
+        '0.00-0.59': 0,
+        '0.60-0.69': 1,
+        '0.70-0.79': 3,
+        '0.80-0.89': 5,
+        '0.90-1.00': 1,
+      },
+      byProvider: {},
+      currentConfig: {
+        topK: 5,
+        minSimilarity: 0.72,
+        provider: 'supabase_pgvector',
+      },
+      recommendation:
+        'Konfigurasi retrieval saat ini terlihat baik untuk Supabase pgvector.',
     },
   },
   byWasteType: {
@@ -246,10 +281,23 @@ describe('explain_quality_analytics tool', () => {
     );
 
     expect(result).toContain('MULTIMODAL RAG PERFORMANCE');
+    expect(result).toContain('RETRIEVAL QUALITY TUNING');
     expect(result).toContain('Usage rate: 67%');
     expect(result).toContain('Embedding unavailable: 2');
     expect(result).toContain('Tidak ada kasus mirip: 2');
     expect(result).toContain('Rata-rata top similarity: 81%');
+    expect(result).toContain('Provider Supabase pgvector: 6');
+    expect(result).toContain('Provider application cosine fallback: 2');
+    expect(result).toContain('Total retrievals: 12');
+    expect(result).toContain('Current topK: 5');
+    expect(result).toContain('Current minSimilarity: 72%');
+    expect(result).toContain('0.80-0.89: 5');
+    expect(result).toContain(
+      'Konfigurasi retrieval saat ini terlihat baik untuk Supabase pgvector.',
+    );
+    expect(result).toContain(
+      'Retrieval quality tuning hanya mengevaluasi konteks tambahan.',
+    );
     expect(result).toContain(
       'Override rate saat Multimodal RAG digunakan: 15%',
     );
@@ -258,6 +306,9 @@ describe('explain_quality_analytics tool', () => {
     );
     expect(result).toContain(
       'Multimodal RAG hanya memberi konteks tambahan dari kasus historis.',
+    );
+    expect(result).toContain(
+      'Supabase pgvector sudah digunakan sebagai production vector search.',
     );
   });
 
