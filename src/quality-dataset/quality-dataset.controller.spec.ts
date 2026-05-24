@@ -131,6 +131,46 @@ describe('QualityDatasetController', () => {
     );
   });
 
+  it('calls vector similar cases with provider auto by default', async () => {
+    const { controller, service } = createController();
+
+    await controller.getVectorSimilarCases(' sub-123 ', '5', '0.8');
+
+    expect(service.getSimilarCasesForSubmissionWithProvider).toHaveBeenCalledWith(
+      'sub-123',
+      {
+        limit: 5,
+        minSimilarity: 0.8,
+        provider: 'auto',
+      },
+    );
+  });
+
+  it('rejects invalid vector similar cases provider', () => {
+    const { controller } = createController();
+
+    expect(() =>
+      controller.getVectorSimilarCases(
+        'sub-123',
+        '5',
+        '0.8',
+        'bad-provider' as any,
+      ),
+    ).toThrow('provider tidak valid');
+  });
+
+  it('returns provider, fallback status, and empty cases safely', async () => {
+    const { controller } = createController();
+
+    await expect(
+      controller.getVectorSimilarCases('sub-123', '5', '0.8', 'auto'),
+    ).resolves.toEqual({
+      provider: 'supabase_pgvector',
+      fallbackUsed: false,
+      cases: [],
+    });
+  });
+
   it('rejects vector similar cases minSimilarity outside 0 to 1', () => {
     const { controller } = createController();
 
