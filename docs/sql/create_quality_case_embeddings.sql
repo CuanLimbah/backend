@@ -6,7 +6,7 @@
 -- embeddings. If you switch embedding providers, update both this SQL vector
 -- dimension and QUALITY_CASE_VECTOR_DIMENSIONS consistently.
 
-create extension if not exists vector with schema extensions;
+create extension if not exists vector;
 
 create table if not exists public.quality_case_embeddings (
   id uuid primary key default gen_random_uuid(),
@@ -16,7 +16,7 @@ create table if not exists public.quality_case_embeddings (
   image_url text,
 
   visual_observation_text text not null,
-  embedding extensions.vector(1024) not null,
+  embedding vector(1024) not null,
   embedding_model text not null,
   embedding_source text not null default 'visual_text_embedding',
 
@@ -61,7 +61,7 @@ on public.quality_case_embeddings (synced_at desc);
 -- For small/empty tables Supabase may recommend creating this after data exists.
 create index if not exists idx_quality_case_embeddings_embedding_ivfflat
 on public.quality_case_embeddings
-using ivfflat (embedding extensions.vector_cosine_ops)
+using ivfflat (embedding vector_cosine_ops)
 with (lists = 100);
 
 create or replace function public.set_quality_case_embeddings_updated_at()
@@ -82,7 +82,7 @@ before update on public.quality_case_embeddings
 for each row execute function public.set_quality_case_embeddings_updated_at();
 
 create or replace function public.match_quality_cases(
-  query_embedding extensions.vector(1024),
+  query_embedding vector(1024),
   filter_waste_type text,
   match_threshold double precision default 0.72,
   match_count integer default 5,
