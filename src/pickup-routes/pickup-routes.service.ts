@@ -288,18 +288,38 @@ export class PickupRoutesService {
         : Promise.resolve(null),
     ]);
 
+    const submissionDropPoint =
+      submission?.drop_point_id &&
+      Number.isFinite(submission.drop_point_latitude) &&
+      Number.isFinite(submission.drop_point_longitude)
+        ? {
+            id: submission.drop_point_id,
+            name: submission.drop_point_name ?? 'Drop point',
+            address: submission.drop_point_address ?? 'Alamat drop point belum diisi',
+            latitude: submission.drop_point_latitude,
+            longitude: submission.drop_point_longitude,
+          }
+        : null;
+    const resolvedDropPoint = dropPoint ?? submissionDropPoint;
+    const resolvedLatitude = resolvedDropPoint?.latitude ?? route.latitude;
+    const resolvedLongitude = resolvedDropPoint?.longitude ?? route.longitude;
+
     return {
       ...route,
+      drop_point_id: route.drop_point_id ?? resolvedDropPoint?.id,
+      address: route.address ?? resolvedDropPoint?.address,
+      latitude: route.latitude ?? resolvedLatitude,
+      longitude: route.longitude ?? resolvedLongitude,
       user_name: user?.business_name || user?.full_name || '-',
       user_email: user?.email || '-',
       driver_name: driver?.full_name || '-',
       driver_email: driver?.email || '-',
       driver_vehicle: driver?.vehicle_number,
-      drop_point: dropPoint,
-      drop_point_name: dropPoint?.name,
-      drop_point_address: dropPoint?.address,
-      drop_point_latitude: dropPoint?.latitude,
-      drop_point_longitude: dropPoint?.longitude,
+      drop_point: resolvedDropPoint,
+      drop_point_name: resolvedDropPoint?.name,
+      drop_point_address: resolvedDropPoint?.address,
+      drop_point_latitude: resolvedLatitude,
+      drop_point_longitude: resolvedLongitude,
       submission,
     };
   }
