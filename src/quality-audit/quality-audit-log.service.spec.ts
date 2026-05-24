@@ -51,17 +51,33 @@ const baseSubmission = {
 };
 
 describe('QualityAuditLogService', () => {
-  function createService(logs: Array<Record<string, unknown>> = []) {
+  function createService(
+    logs: Array<Record<string, unknown>> = [],
+    datasetAnalytics?: Record<string, unknown>,
+  ) {
     const findQuery = createFindQuery(logs);
     const model = {
       create: jest.fn().mockResolvedValue({}),
       find: jest.fn().mockReturnValue(findQuery),
     };
+    const qualityCaseDatasetService = {
+      getReadinessAnalytics: jest.fn().mockResolvedValue(
+        datasetAnalytics ?? {
+          eligibleCases: 0,
+          embeddingCoverage: { embeddingCoverageRate: 0 },
+          supabaseVectorCoverage: { syncCoverageRate: 0 },
+        },
+      ),
+    };
 
     return {
-      service: new QualityAuditLogService(model as any),
+      service: new QualityAuditLogService(
+        model as any,
+        qualityCaseDatasetService as any,
+      ),
       model,
       findQuery,
+      qualityCaseDatasetService,
     };
   }
 
@@ -410,5 +426,154 @@ describe('QualityAuditLogService', () => {
         $lte: '2026-05-31T23:59:59.999Z',
       },
     });
+  });
+
+  it('builds final AI evaluation report with ready status', async () => {
+    const logs = [
+      ...Array.from({ length: 10 }, (_, index) => ({
+        event_type: 'ai_quality_checked',
+        waste_type: 'oil',
+        ai_quality_grade: 'B',
+        ai_quality_confidence: 0.8,
+        ai_quality_rag_source: 'rag',
+        ai_visual_source: 'vision_llm',
+        ai_multimodal_rag_used: index < 6,
+        ai_multimodal_rag_source:
+          index < 6 ? 'similar_quality_cases' : 'none',
+        ai_multimodal_rag_provider:
+          index < 6 ? 'supabase_pgvector' : 'fallback_none',
+        ai_similar_case_count: index < 6 ? 3 : undefined,
+        ai_similar_case_top_score: index < 6 ? 0.84 : undefined,
+        created_at: `2026-05-2${index % 5}T00:00:00.000Z`,
+      })),
+      ...Array.from({ length: 5 }, (_, index) => ({
+        event_type: index === 0 ? 'admin_overridden' : 'admin_verified',
+        waste_type: 'oil',
+        ai_quality_grade: 'B',
+        final_quality_grade: index === 0 ? 'C' : 'B',
+        ai_multimodal_rag_used: true,
+        ai_multimodal_rag_source: 'similar_quality_cases',
+        ai_multimodal_rag_provider: 'supabase_pgvector',
+        is_overridden: index === 0,
+        override_primary_reason: index === 0 ? 'ai_too_optimistic' : undefined,
+        ai_error_pattern: index === 0 ? 'ai_too_optimistic' : undefined,
+        created_at: `2026-05-2${index}T01:00:00.000Z`,
+      })),
+    ];
+    const { service } = createService(logs, {
+      eligibleCases: 12,
+      embeddingCoverage: { embeddingCoverageRate: 0.9 },
+      supabaseVectorCoverage: { syncCoverageRate: 0.85 },
+    });
+
+    const report = await service.getFinalAiEvaluationReport({
+      wasteType: 'oil',
+    });
+
+    expect(report.generatedAt).toBeDefined();
+    expect(report.filters).toEqual({ wasteType: 'oil' });
+    expect(report.summary.readinessStatus).toBe('ready');
+    expect(report.summary.totalAiQualityChecks).toBe(10);
+    expect(report.multimodalRag.providerUsage.supabase_pgvector).toBe(6);
+    expect(report.dataset.embeddingCoverageRate).toBe(0.9);
+    expect(report.demoReadinessChecklist).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'Admin remains final validator' }),
+      ]),
+    );
+  });
+
+  it('builds partially ready and not ready final report statuses', async () => {
+    const moderateLogs = [
+      ...Array.from({ length: 5 }, () => ({
+        event_type: 'ai_quality_checked',
+        waste_type: 'oil',
+        ai_quality_confidence: 0.7,
+        ai_quality_rag_source: 'rag',
+        ai_visual_source: 'vision_llm',
+        created_at: '2026-05-21T00:00:00.000Z',
+      })),
+      ...Array.from({ length: 3 }, () => ({
+        event_type: 'admin_verified',
+        waste_type: 'oil',
+        ai_quality_grade: 'B',
+        final_quality_grade: 'B',
+        is_overridden: false,
+        created_at: '2026-05-21T01:00:00.000Z',
+      })),
+    ];
+    const partial = createService(moderateLogs, {
+      eligibleCases: 5,
+      embeddingCoverage: { embeddingCoverageRate: 0.5 },
+      supabaseVectorCoverage: { syncCoverageRate: 0.2 },
+    });
+    const insufficient = createService([], {
+      eligibleCases: 0,
+      embeddingCoverage: { embeddingCoverageRate: 0 },
+      supabaseVectorCoverage: { syncCoverageRate: 0 },
+    });
+
+    await expect(
+      partial.service.getFinalAiEvaluationReport(),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        summary: expect.objectContaining({ readinessStatus: 'partially_ready' }),
+      }),
+    );
+    await expect(
+      insufficient.service.getFinalAiEvaluationReport(),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        summary: expect.objectContaining({ readinessStatus: 'not_ready' }),
+      }),
+    );
+  });
+
+  it('final report recommends improvements for weak signals', async () => {
+    const { service } = createService(
+      [
+        {
+          event_type: 'ai_quality_checked',
+          waste_type: 'food',
+          ai_quality_confidence: 0.4,
+          ai_quality_rag_source: 'fallback_sop',
+          ai_visual_source: 'fallback',
+          ai_multimodal_rag_source: 'embedding_unavailable',
+          ai_multimodal_rag_provider: 'embedding_unavailable',
+          created_at: '2026-05-21T00:00:00.000Z',
+        },
+        {
+          event_type: 'admin_overridden',
+          waste_type: 'food',
+          ai_quality_grade: 'A',
+          final_quality_grade: 'C',
+          is_overridden: true,
+          ai_error_pattern: 'ai_too_optimistic',
+          override_primary_reason: 'ai_too_optimistic',
+          created_at: '2026-05-21T01:00:00.000Z',
+        },
+      ],
+      {
+        eligibleCases: 1,
+        embeddingCoverage: { embeddingCoverageRate: 0.1 },
+        supabaseVectorCoverage: { syncCoverageRate: 0.1 },
+      },
+    );
+
+    const report = await service.getFinalAiEvaluationReport();
+
+    expect(report.recommendations).toEqual(
+      expect.arrayContaining([
+        'Tambah sampel AI Quality Check untuk evaluasi.',
+        'Audit AI error patterns dan prompt/SOP grading.',
+        'Jalankan Supabase vector backfill.',
+      ]),
+    );
+    expect(report.risks).toEqual(
+      expect.arrayContaining([
+        'Embedding coverage masih rendah.',
+        'Override admin masih tinggi.',
+      ]),
+    );
   });
 });

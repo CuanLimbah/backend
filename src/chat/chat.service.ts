@@ -29,6 +29,7 @@ import { setPricingSubmissionModel } from './tools/explain-submission-pricing.to
 import { setQualityAssessmentSubmissionModel } from './tools/explain-quality-assessment.tool';
 import { setQualityAuditLogService } from './tools/explain-quality-analytics.tool';
 import { setQualityCaseDatasetService } from './tools/explain-quality-dataset-readiness.tool';
+import { setFinalAiEvaluationReportService } from './tools/explain-final-ai-evaluation-report.tool';
 
 // Side-effect imports: auto-register tools
 import './tools/navigate-website.tool';
@@ -38,6 +39,7 @@ import './tools/explain-submission-pricing.tool';
 import './tools/explain-quality-assessment.tool';
 import './tools/explain-quality-analytics.tool';
 import './tools/explain-quality-dataset-readiness.tool';
+import './tools/explain-final-ai-evaluation-report.tool';
 import './tools/get-submission-status.tool';
 import './tools/find-drop-point.tool';
 
@@ -93,6 +95,7 @@ export class ChatService implements OnModuleInit {
     setPricingSubmissionModel(this.submissionModel);
     setQualityAssessmentSubmissionModel(this.submissionModel);
     setQualityAuditLogService(this.qualityAuditLogService);
+    setFinalAiEvaluationReportService(this.qualityAuditLogService);
     setQualityCaseDatasetService(this.qualityCaseDatasetService);
 
     this.logger.log(
@@ -304,6 +307,7 @@ Rules:
 - If the user asks about AI quality check, rekomendasi grade AI, tingkat kontaminasi, why AI recommended a quality grade, why confidence is low, what AI saw from the photo, how AI quality affects pricing, or whether final price used AI recommendation or admin grade, use the 'explain_quality_assessment' tool.
 - If an admin asks about performa AI quality, analytics AI, override rate, agreement rate, fallback vision, fallback SOP, Supabase RAG usage, confidence AI, grade AI sering salah, or whether AI recommendations match admin decisions, use the 'explain_quality_analytics' tool.
 - If an admin asks about dataset readiness, kesiapan dataset, historical quality cases, missing image/final grade/visual observation, or preparation for Multimodal RAG, use the 'explain_quality_dataset_readiness' tool.
+- If an admin asks laporan akhir AI, final AI evaluation, apakah fitur AI siap demo, apakah AI sesuai proposal, AI readiness, or evaluasi akhir AI, use the 'explain_final_ai_evaluation_report' tool.
 - If the user asks about their submission status, use the 'get_submission_status' tool.
 - If the user asks about drop-off locations, use the 'find_drop_point' tool.
 - Acknowledge their past history if relevant.`,
