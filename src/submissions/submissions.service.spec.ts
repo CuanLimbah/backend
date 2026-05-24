@@ -55,6 +55,9 @@ describe('SubmissionsService', () => {
     const transactionModel = {
       create: jest.fn().mockResolvedValue({}),
     };
+    const dropPointModel = {
+      findOne: jest.fn().mockReturnValue(queryResult(null)),
+    };
     const activityQueue = {
       add: jest.fn().mockResolvedValue({}),
     };
@@ -78,6 +81,7 @@ describe('SubmissionsService', () => {
     const service = new SubmissionsService(
       submissionModel as any,
       transactionModel as any,
+      dropPointModel as any,
       activityQueue as any,
       mediaQueue as any,
       cloudinaryService as any,
