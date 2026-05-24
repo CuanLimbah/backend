@@ -67,6 +67,23 @@ describe('QualityDatasetController', () => {
     );
   });
 
+  it('rejects similar case limit outside 1 to 50 and minSimilarity outside 0 to 1', () => {
+    const { controller } = createController();
+
+    expect(() => controller.getSimilarCases('sub-123', '0')).toThrow(
+      'limit harus berada di antara 1 dan 50',
+    );
+    expect(() => controller.getSimilarCases('sub-123', '51')).toThrow(
+      'limit harus berada di antara 1 dan 50',
+    );
+    expect(() => controller.getSimilarCases('sub-123', undefined, '-0.1')).toThrow(
+      'minSimilarity harus berada di antara 0 dan 1',
+    );
+    expect(() => controller.getSimilarCases('sub-123', undefined, '1.1')).toThrow(
+      'minSimilarity harus berada di antara 0 dan 1',
+    );
+  });
+
   it('calls vector backfill with numeric options', async () => {
     const { controller, service } = createController();
 
@@ -76,6 +93,14 @@ describe('QualityDatasetController', () => {
       limit: 10,
       force: true,
     });
+  });
+
+  it('rejects vector backfill limit above 500', () => {
+    const { controller } = createController();
+
+    expect(() =>
+      controller.backfillSupabaseVectors(undefined, undefined, '501'),
+    ).toThrow('limit harus berada di antara 1 dan 500');
   });
 
   it('rejects missing submissionId for vector similar cases', () => {
@@ -104,5 +129,16 @@ describe('QualityDatasetController', () => {
         provider: 'supabase_pgvector',
       },
     );
+  });
+
+  it('rejects vector similar cases minSimilarity outside 0 to 1', () => {
+    const { controller } = createController();
+
+    expect(() =>
+      controller.getVectorSimilarCases('sub-123', '5', '-0.1'),
+    ).toThrow('minSimilarity harus berada di antara 0 dan 1');
+    expect(() =>
+      controller.getVectorSimilarCases('sub-123', '5', '1.1'),
+    ).toThrow('minSimilarity harus berada di antara 0 dan 1');
   });
 });

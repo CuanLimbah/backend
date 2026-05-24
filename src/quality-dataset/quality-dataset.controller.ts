@@ -67,7 +67,7 @@ export class QualityDatasetController {
     @Query('limit') queryLimit?: string,
     @Query('force') queryForce?: string,
   ) {
-    const limit = bodyLimit ?? (queryLimit ? Number(queryLimit) : undefined);
+    const limit = this.parseLimit(bodyLimit ?? queryLimit, 'limit', 500);
     const force =
       bodyForce ??
       (queryForce == null ? undefined : ['true', '1', 'yes'].includes(queryForce));
@@ -93,15 +93,8 @@ export class QualityDatasetController {
       throw new BadRequestException('submissionId wajib diisi');
     }
 
-    const parsedLimit = limit ? Number(limit) : undefined;
-    if (limit && Number.isNaN(parsedLimit)) {
-      throw new BadRequestException('limit harus berupa angka');
-    }
-
-    const parsedMinSimilarity = minSimilarity ? Number(minSimilarity) : undefined;
-    if (minSimilarity && Number.isNaN(parsedMinSimilarity)) {
-      throw new BadRequestException('minSimilarity harus berupa angka');
-    }
+    const parsedLimit = this.parseLimit(limit, 'limit', 50);
+    const parsedMinSimilarity = this.parseMinSimilarity(minSimilarity);
 
     return this.qualityCaseDatasetService.getSimilarCasesForSubmission(
       submissionId.trim(),
@@ -119,7 +112,7 @@ export class QualityDatasetController {
     @Query('limit') queryLimit?: string,
     @Query('force') queryForce?: string,
   ) {
-    const limit = this.parseOptionalNumber(bodyLimit ?? queryLimit, 'limit');
+    const limit = this.parseLimit(bodyLimit ?? queryLimit, 'limit', 500);
     const force =
       bodyForce ??
       (queryForce == null ? undefined : ['true', '1', 'yes'].includes(queryForce));
@@ -146,6 +139,11 @@ export class QualityDatasetController {
     return this.qualityCaseDatasetService.getVectorSyncStatus();
   }
 
+  @Get('vector/tuning-config')
+  getVectorTuningConfig() {
+    return this.qualityCaseDatasetService.getVectorTuningConfig();
+  }
+
   @Get('vector/similar-cases')
   getVectorSimilarCases(
     @Query('submissionId') submissionId: string,
@@ -161,11 +159,8 @@ export class QualityDatasetController {
       throw new BadRequestException('provider tidak valid');
     }
 
-    const parsedLimit = this.parseOptionalNumber(limit, 'limit');
-    const parsedMinSimilarity = this.parseOptionalNumber(
-      minSimilarity,
-      'minSimilarity',
-    );
+    const parsedLimit = this.parseLimit(limit, 'limit', 50);
+    const parsedMinSimilarity = this.parseMinSimilarity(minSimilarity);
 
     return this.qualityCaseDatasetService.getSimilarCasesForSubmissionWithProvider(
       submissionId.trim(),
@@ -185,6 +180,32 @@ export class QualityDatasetController {
     const parsed = Number(value);
     if (Number.isNaN(parsed)) {
       throw new BadRequestException(`${fieldName} harus berupa angka`);
+    }
+    return parsed;
+  }
+
+  private parseLimit(
+    value: string | number | undefined,
+    fieldName = 'limit',
+    max = 50,
+  ): number | undefined {
+    const parsed = this.parseOptionalNumber(value, fieldName);
+    if (parsed == null) return undefined;
+    if (parsed < 1 || parsed > max) {
+      throw new BadRequestException(
+        `${fieldName} harus berada di antara 1 dan ${max}`,
+      );
+    }
+    return parsed;
+  }
+
+  private parseMinSimilarity(value: string | number | undefined): number | undefined {
+    const parsed = this.parseOptionalNumber(value, 'minSimilarity');
+    if (parsed == null) return undefined;
+    if (parsed < 0 || parsed > 1) {
+      throw new BadRequestException(
+        'minSimilarity harus berada di antara 0 dan 1',
+      );
     }
     return parsed;
   }

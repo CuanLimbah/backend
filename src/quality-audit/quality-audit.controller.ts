@@ -22,4 +22,21 @@ export class QualityAuditController {
       wasteType,
     });
   }
+
+  @Get('multimodal-rag/retrieval-quality')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('admin')
+  async getMultimodalRagRetrievalQuality(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('wasteType') wasteType?: 'food' | 'oil',
+  ) {
+    const analytics = await this.qualityAuditLogService.getAnalytics({
+      startDate,
+      endDate,
+      wasteType,
+    });
+
+    return analytics.multimodalRag.retrievalQuality;
+  }
 }

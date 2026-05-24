@@ -362,8 +362,13 @@ export class QualityCaseDatasetService {
     limit?: number;
     minSimilarity?: number;
   }): Promise<SimilarQualityCase[]> {
-    const limit = Math.min(Math.max(Number(input.limit) || 5, 1), 20);
-    const minSimilarity = input.minSimilarity ?? 0.7;
+    const limit = this.clampNumber(Number(input.limit ?? 5), 1, 50, 5);
+    const minSimilarity = this.clampNumber(
+      Number(input.minSimilarity ?? 0.72),
+      0,
+      1,
+      0.72,
+    );
     const query: Record<string, unknown> = {
       eligibility_status: 'eligible',
       similarity_search_ready: true,
@@ -559,6 +564,24 @@ export class QualityCaseDatasetService {
     );
   }
 
+  getVectorTuningConfig() {
+    return {
+      provider: process.env.QUALITY_CASE_VECTOR_PROVIDER || 'supabase_pgvector',
+      topK: Number(process.env.QUALITY_CASE_VECTOR_TOP_K) || 5,
+      minSimilarity:
+        Number(process.env.QUALITY_CASE_VECTOR_MATCH_THRESHOLD) || 0.72,
+      backfillLimit: Number(process.env.QUALITY_CASE_VECTOR_BACKFILL_LIMIT) || 50,
+      dimensions: Number(process.env.QUALITY_CASE_VECTOR_DIMENSIONS) || 1024,
+      table: process.env.QUALITY_CASE_VECTOR_TABLE || 'quality_case_embeddings',
+      rpc: process.env.QUALITY_CASE_VECTOR_RPC || 'match_quality_cases',
+      notes: [
+        'topK dan minSimilarity dibaca dari environment.',
+        'Ubah .env lalu restart backend untuk mengubah konfigurasi retrieval.',
+        'AI tetap recommendation-only dan admin tetap validator akhir.',
+      ],
+    };
+  }
+
   async getReadinessAnalytics(
     filters: ReadinessFilters = {},
   ): Promise<QualityDatasetReadinessAnalytics> {
@@ -729,6 +752,16 @@ export class QualityCaseDatasetService {
 
   private safeRatio(numerator: number, denominator: number): number {
     return denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
+  }
+
+  private clampNumber(
+    value: number,
+    min: number,
+    max: number,
+    fallback: number,
+  ): number {
+    const safeValue = Number.isFinite(value) ? value : fallback;
+    return Math.min(Math.max(safeValue, min), max);
   }
 
   private countMissingReason(

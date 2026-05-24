@@ -178,6 +178,10 @@ function buildExplanation(
     `- ${getSupabaseVectorCoverageInterpretation(
       analytics.supabaseVectorCoverage?.syncCoverageRate,
     )}`,
+    '- Setelah sync coverage cukup, gunakan Retrieval Quality Tuning untuk memilih threshold dan topK terbaik.',
+    (analytics.supabaseVectorCoverage?.syncCoverageRate ?? 0) < 0.8
+      ? '- Jangan finalisasi tuning threshold sebelum Supabase vector sync coverage cukup.'
+      : '- Supabase vector sync coverage sudah cukup untuk mulai tuning threshold/topK.',
     '',
     'REKOMENDASI PERBAIKAN DATA',
     getRecommendations(analytics),

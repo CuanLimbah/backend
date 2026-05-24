@@ -321,17 +321,26 @@ export class SupabaseQualityVectorService {
     }
 
     try {
+      const defaultThreshold = this.getDefaultMatchThreshold();
+      const defaultTopK = this.getDefaultTopK();
+      const matchThreshold = this.clampNumber(
+        Number(input.minSimilarity ?? defaultThreshold),
+        0,
+        1,
+        defaultThreshold,
+      );
+      const matchCount = this.clampNumber(
+        Number(input.limit ?? defaultTopK),
+        1,
+        50,
+        defaultTopK,
+      );
+
       const { data, error } = await this.supabase!.rpc(this.rpcName, {
         query_embedding: input.embedding,
         filter_waste_type: input.wasteType,
-        match_threshold:
-          input.minSimilarity ??
-          Number(this.config.get<string>('QUALITY_CASE_VECTOR_MATCH_THRESHOLD')) ??
-          0.72,
-        match_count:
-          input.limit ??
-          Number(this.config.get<string>('QUALITY_CASE_VECTOR_TOP_K')) ??
-          5,
+        match_threshold: matchThreshold,
+        match_count: matchCount,
         exclude_submission_id: input.excludeSubmissionId ?? null,
       });
 
@@ -461,6 +470,28 @@ export class SupabaseQualityVectorService {
 
   private safeRatio(numerator: number, denominator: number): number {
     return denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
+  }
+
+  private getDefaultMatchThreshold(): number {
+    const value = Number(
+      this.config.get<string>('QUALITY_CASE_VECTOR_MATCH_THRESHOLD'),
+    );
+    return Number.isFinite(value) ? value : 0.72;
+  }
+
+  private getDefaultTopK(): number {
+    const value = Number(this.config.get<string>('QUALITY_CASE_VECTOR_TOP_K'));
+    return Number.isFinite(value) && value > 0 ? value : 5;
+  }
+
+  private clampNumber(
+    value: number,
+    min: number,
+    max: number,
+    fallback: number,
+  ): number {
+    const safeValue = Number.isFinite(value) ? value : fallback;
+    return Math.min(Math.max(safeValue, min), max);
   }
 
   private withoutUndefined<T extends Record<string, unknown>>(value: T): T {

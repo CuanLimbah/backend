@@ -273,6 +273,7 @@ export interface QualityAiAnalytics {
       embedding_unavailable: number;
       unknown: number;
     };
+    retrievalQuality?: MultimodalRagRetrievalQuality;
     byWasteType: Record<
       WasteType,
       {
@@ -302,6 +303,44 @@ export interface QualityAiAnalytics {
     admin_quality_notes?: string;
     created_at: string;
   }>;
+}
+
+export interface MultimodalRagTuningConfig {
+  provider: QualityVectorProvider;
+  topK: number;
+  minSimilarity: number;
+  maxCandidates?: number;
+}
+
+export interface MultimodalRagRetrievalQuality {
+  totalRetrievals: number;
+  supabaseRetrievals: number;
+  applicationFallbackRetrievals: number;
+  noResultRetrievals: number;
+  embeddingUnavailableRetrievals: number;
+  averageTopSimilarity: number | null;
+  averageSimilarCaseCount: number | null;
+  lowSimilarityCount: number;
+  lowSimilarityRate: number;
+  highSimilarityCount: number;
+  highSimilarityRate: number;
+  byThresholdBucket: Record<string, number>;
+  byProvider: Record<
+    string,
+    {
+      totalRetrievals: number;
+      averageTopSimilarity: number | null;
+      averageSimilarCaseCount: number | null;
+      overrideRate: number;
+      agreementRate: number;
+    }
+  >;
+  currentConfig: {
+    topK: number;
+    minSimilarity: number;
+    provider: string;
+  };
+  recommendation: string;
 }
 
 export type QualityCaseEligibilityStatus =

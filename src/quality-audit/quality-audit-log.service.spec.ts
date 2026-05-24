@@ -315,6 +315,23 @@ describe('QualityAuditLogService', () => {
         fallback_none: 0,
       }),
     );
+    expect(analytics.multimodalRag.retrievalQuality).toEqual(
+      expect.objectContaining({
+        totalRetrievals: 2,
+        supabaseRetrievals: 1,
+        embeddingUnavailableRetrievals: 1,
+        averageTopSimilarity: 0.82,
+        averageSimilarCaseCount: 3,
+        highSimilarityCount: 1,
+      }),
+    );
+    expect(
+      analytics.multimodalRag.retrievalQuality?.byThresholdBucket['0.80-0.89'],
+    ).toBe(1);
+    expect(
+      analytics.multimodalRag.retrievalQuality?.byProvider.supabase_pgvector
+        .totalRetrievals,
+    ).toBe(1);
     expect(analytics.multimodalRag.byWasteType.oil.usedCount).toBe(1);
     expect(analytics.multimodalRag.byWasteType.food.usedCount).toBe(0);
     expect(analytics.byWasteType.food.adminOverrideCount).toBe(1);

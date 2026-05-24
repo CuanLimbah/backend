@@ -219,6 +219,47 @@ describe('SupabaseQualityVectorService', () => {
     );
   });
 
+  it('clamps RPC match_count and match_threshold', async () => {
+    const { service, rpc } = createService();
+
+    await service.findSimilarCases({
+      wasteType: 'oil',
+      embedding: baseCase.image_embedding,
+      limit: 999,
+      minSimilarity: 9,
+    });
+
+    expect(rpc).toHaveBeenCalledWith(
+      'match_quality_cases',
+      expect.objectContaining({
+        match_count: 50,
+        match_threshold: 1,
+      }),
+    );
+  });
+
+  it('uses env default topK and threshold when params are omitted', async () => {
+    const { service, rpc } = createService({
+      env: {
+        QUALITY_CASE_VECTOR_TOP_K: '7',
+        QUALITY_CASE_VECTOR_MATCH_THRESHOLD: '0.66',
+      },
+    });
+
+    await service.findSimilarCases({
+      wasteType: 'oil',
+      embedding: baseCase.image_embedding,
+    });
+
+    expect(rpc).toHaveBeenCalledWith(
+      'match_quality_cases',
+      expect.objectContaining({
+        match_count: 7,
+        match_threshold: 0.66,
+      }),
+    );
+  });
+
   it('returns empty results when RPC fails', async () => {
     const { service } = createService({
       supabase: {

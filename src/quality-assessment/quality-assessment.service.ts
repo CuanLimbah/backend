@@ -481,8 +481,8 @@ Guardrails:
         wasteType: input.submission.waste_type,
         embedding: embeddingResult.embedding,
         excludeSubmissionId: input.submission.id,
-        limit: 5,
-        minSimilarity: 0.7,
+        limit: this.getQualityVectorTopK(),
+        minSimilarity: this.getQualityVectorMatchThreshold(),
       };
       const similarSearch =
         typeof this.qualityCaseDatasetService.findSimilarCasesWithProvider ===
@@ -527,6 +527,20 @@ Guardrails:
       );
       return base;
     }
+  }
+
+  private getQualityVectorTopK(): number {
+    const rawValue = Number(this.config.get<string>('QUALITY_CASE_VECTOR_TOP_K'));
+    const value = Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 5;
+    return Math.min(Math.max(value, 1), 20);
+  }
+
+  private getQualityVectorMatchThreshold(): number {
+    const rawValue = Number(
+      this.config.get<string>('QUALITY_CASE_VECTOR_MATCH_THRESHOLD'),
+    );
+    const value = Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 0.72;
+    return Math.min(Math.max(value, 0), 1);
   }
 
   private applyVisualConfidenceCaps(
