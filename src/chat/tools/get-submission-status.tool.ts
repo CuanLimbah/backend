@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Model } from 'mongoose';
 import { WasteSubmissionEntity } from '../../database/schemas/submission.schema';
+import { getWasteQuantityUnitLabel } from '../../common/waste-unit.utils';
 import { AgentTool, ToolContext, globalToolRegistry } from './tool.registry';
 
 let submissionModel: Model<WasteSubmissionEntity> | null = null;
@@ -36,8 +37,9 @@ const getSubmissionStatusTool: AgentTool = {
 
       const label = sub.waste_type === 'food' ? 'Limbah Makanan' : 'Minyak Jelantah';
       const weight = sub.actual_weight ?? sub.estimated_weight;
+      const unitLabel = getWasteQuantityUnitLabel(sub.waste_type);
       const earnings = sub.earnings ? ` | Pendapatan: Rp ${sub.earnings.toLocaleString('id-ID')}` : '';
-      return `Setoran ${sub.id}: ${label}, ${weight} kg, status: ${sub.status}${earnings}`;
+      return `Setoran ${sub.id}: ${label}, ${weight} ${unitLabel}, status: ${sub.status}${earnings}`;
     }
 
     const subs = await submissionModel
@@ -53,7 +55,7 @@ const getSubmissionStatusTool: AgentTool = {
       .map((s) => {
         const label = s.waste_type === 'food' ? 'Makanan' : 'Minyak';
         const weight = s.actual_weight ?? s.estimated_weight;
-        return `- ${s.id}: ${label}, ${weight} kg, status: ${s.status}`;
+        return `- ${s.id}: ${label}, ${weight} ${getWasteQuantityUnitLabel(s.waste_type)}, status: ${s.status}`;
       })
       .join('\n');
   },

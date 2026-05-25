@@ -24,6 +24,30 @@ export function getLlmModel(config: ConfigService) {
   return mistral('mistral-small-latest');
 }
 
+export function getVisionModel(config: ConfigService) {
+  const provider = (
+    config.get<string>('VISION_PROVIDER') ||
+    config.get<string>('LLM_PROVIDER') ||
+    'mistral'
+  ).toLowerCase() as ProviderType;
+  const visionModel = config.get<string>('VISION_MODEL')?.trim();
+
+  if (provider === 'openai') {
+    const openai = createOpenAI({ apiKey: config.get('OPENAI_API_KEY')! });
+    return openai(visionModel || config.get<string>('OPENAI_MODEL') || 'gpt-4o-mini');
+  }
+
+  if (provider === 'gemini') {
+    const google = createGoogleGenerativeAI({
+      apiKey: config.get('GEMINI_API_KEY')!,
+    });
+    return google(visionModel || 'gemini-1.5-flash');
+  }
+
+  const mistral = createMistral({ apiKey: config.get('MISTRAL_API_KEY')! });
+  return mistral(visionModel || config.get<string>('MISTRAL_MODEL') || 'mistral-small-latest');
+}
+
 export function getEmbeddingModel(config: ConfigService) {
   const provider = (config.get<string>('EMBEDDING_PROVIDER') || 'mistral').toLowerCase() as ProviderType;
 

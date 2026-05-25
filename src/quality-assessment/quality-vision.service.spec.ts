@@ -7,6 +7,7 @@ jest.mock('ai', () => ({
 
 jest.mock('../chat/llm.factory', () => ({
   getLlmModel: jest.fn(() => 'vision-model'),
+  getVisionModel: jest.fn(() => 'vision-model'),
 }));
 
 const mockedGenerateText = generateText as jest.Mock;
@@ -192,5 +193,63 @@ describe('QualityVisionService', () => {
         visionConfidence: 0.78,
       }),
     ).toBe('gemini:vision-quality-mvp-v1');
+  });
+
+  it('uses VISION_PROVIDER independently from LLM_PROVIDER', async () => {
+    mockedGenerateText.mockResolvedValue({
+      text: JSON.stringify({
+        imageQuality: 'clear',
+        isWasteVisible: true,
+        detectedWasteType: 'oil',
+        visualObservation: 'Minyak terlihat jernih.',
+        visionConfidence: 0.81,
+      }),
+    });
+
+    const service = new QualityVisionService(
+      createConfig({
+        LLM_PROVIDER: 'mistral',
+        VISION_PROVIDER: 'gemini',
+        MISTRAL_API_KEY: 'mistral-key',
+        GEMINI_API_KEY: 'gemini-key',
+      }) as any,
+    );
+
+    const result = await service.analyzeWasteImage({
+      imageUrl: 'https://example.com/oil.jpg',
+      expectedWasteType: 'oil',
+    });
+
+    expect(mockedGenerateText).toHaveBeenCalled();
+    expect(result.imageQuality).toBe('clear');
+    expect(service.getModelVersion()).toBe('gemini:vision-quality-mvp-v1');
+  });
+
+  it('passes uploaded data URL images directly to the vision provider', async () => {
+    mockedGenerateText.mockResolvedValue({
+      text: JSON.stringify({
+        imageQuality: 'clear',
+        isWasteVisible: true,
+        detectedWasteType: 'oil',
+        visualObservation: 'Minyak terlihat coklat muda.',
+        visionConfidence: 0.76,
+      }),
+    });
+
+    const service = new QualityVisionService(
+      createConfig({
+        VISION_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'gemini-key',
+      }) as any,
+    );
+    const imageUrl = 'data:image/jpeg;base64,ZmFrZS1pbWFnZQ==';
+
+    await service.analyzeWasteImage({
+      imageUrl,
+      expectedWasteType: 'oil',
+    });
+
+    const call = mockedGenerateText.mock.calls[0]?.[0];
+    expect(call.messages[0].content[1].image).toBe(imageUrl);
   });
 });

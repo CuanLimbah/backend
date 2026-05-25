@@ -84,46 +84,43 @@ export class SupabaseQualityVectorService {
   }
 
   buildQualityVectorPayload(caseRecord: QualityCaseDatasetRecord): Record<string, unknown> {
-    const visualObservationText =
-      this.imageEmbeddingService.buildVisualObservationText({
-        imageUrl: caseRecord.image_url,
-        visualObservation: caseRecord.ai_visual_observations,
-        wasteType: caseRecord.waste_type,
-      }) || caseRecord.ai_visual_observations?.visualObservation;
+    const normalizedCaseRecord = this.toPlainCaseRecord(caseRecord);
+    const visualObservationText = this.getVisualObservationText(caseRecord);
 
     return this.withoutUndefined({
-      submission_id: caseRecord.submission_id,
-      user_id: caseRecord.user_id,
-      waste_type: caseRecord.waste_type,
-      image_url: caseRecord.image_url,
+      submission_id: normalizedCaseRecord.submission_id,
+      user_id: normalizedCaseRecord.user_id,
+      waste_type: normalizedCaseRecord.waste_type,
+      image_url: normalizedCaseRecord.image_url,
       visual_observation_text: visualObservationText,
-      embedding: caseRecord.image_embedding,
-      embedding_model: caseRecord.image_embedding_model,
-      embedding_source: caseRecord.image_embedding_source ?? 'visual_text_embedding',
-      final_quality_grade: caseRecord.final_quality_grade,
-      ai_quality_grade: caseRecord.ai_quality_grade,
-      ai_quality_confidence: caseRecord.ai_quality_confidence,
-      ai_visual_source: caseRecord.ai_visual_source,
-      ai_quality_rag_source: caseRecord.ai_quality_rag_source,
-      override_primary_reason: caseRecord.override_primary_reason,
-      ai_error_pattern: caseRecord.ai_error_pattern,
-      admin_quality_notes: caseRecord.admin_quality_notes,
-      quality_feedback: caseRecord.quality_feedback ?? {},
+      embedding: normalizedCaseRecord.image_embedding,
+      embedding_model: normalizedCaseRecord.image_embedding_model,
+      embedding_source:
+        normalizedCaseRecord.image_embedding_source ?? 'visual_text_embedding',
+      final_quality_grade: normalizedCaseRecord.final_quality_grade,
+      ai_quality_grade: normalizedCaseRecord.ai_quality_grade,
+      ai_quality_confidence: normalizedCaseRecord.ai_quality_confidence,
+      ai_visual_source: normalizedCaseRecord.ai_visual_source,
+      ai_quality_rag_source: normalizedCaseRecord.ai_quality_rag_source,
+      override_primary_reason: normalizedCaseRecord.override_primary_reason,
+      ai_error_pattern: normalizedCaseRecord.ai_error_pattern,
+      admin_quality_notes: normalizedCaseRecord.admin_quality_notes,
+      quality_feedback: normalizedCaseRecord.quality_feedback ?? {},
       metadata: {
-        ai_similar_case_ids: caseRecord.ai_similar_case_ids,
-        ai_similar_case_count: caseRecord.ai_similar_case_count,
-        ai_similar_case_top_score: caseRecord.ai_similar_case_top_score,
-        eligibility_status: caseRecord.eligibility_status,
-        eligibility_reasons: caseRecord.eligibility_reasons,
-        override_reason_tags: caseRecord.override_reason_tags,
-        override_feedback_severity: caseRecord.override_feedback_severity,
-        actual_weight: caseRecord.actual_weight,
-        price_snapshot_per_kg: caseRecord.price_snapshot_per_kg,
-        final_price_per_kg: caseRecord.final_price_per_kg,
-        earnings: caseRecord.earnings,
+        ai_similar_case_ids: normalizedCaseRecord.ai_similar_case_ids,
+        ai_similar_case_count: normalizedCaseRecord.ai_similar_case_count,
+        ai_similar_case_top_score: normalizedCaseRecord.ai_similar_case_top_score,
+        eligibility_status: normalizedCaseRecord.eligibility_status,
+        eligibility_reasons: normalizedCaseRecord.eligibility_reasons,
+        override_reason_tags: normalizedCaseRecord.override_reason_tags,
+        override_feedback_severity: normalizedCaseRecord.override_feedback_severity,
+        actual_weight: normalizedCaseRecord.actual_weight,
+        price_snapshot_per_kg: normalizedCaseRecord.price_snapshot_per_kg,
+        final_price_per_kg: normalizedCaseRecord.final_price_per_kg,
+        earnings: normalizedCaseRecord.earnings,
       },
-      source_created_at: caseRecord.created_at,
-      source_updated_at: caseRecord.updated_at,
+      source_created_at: normalizedCaseRecord.created_at,
+      source_updated_at: normalizedCaseRecord.updated_at,
       synced_at: new Date().toISOString(),
     });
   }
@@ -131,38 +128,54 @@ export class SupabaseQualityVectorService {
   async upsertCaseVector(
     caseRecord: QualityCaseDatasetRecord,
   ): Promise<VectorSyncResult> {
+    const qualityCase = this.toPlainCaseRecord(caseRecord);
+
     if (!this.isEnabled()) {
       return {
-        submissionId: caseRecord.submission_id,
+        submissionId: qualityCase.submission_id,
         status: 'skipped',
         reason: 'Supabase pgvector is not configured',
       };
     }
 
-    if (caseRecord.eligibility_status !== 'eligible') {
-      await this.updateSyncStatus(caseRecord.submission_id, {
+    if (qualityCase.eligibility_status !== 'eligible') {
+      await this.updateSyncStatus(qualityCase.submission_id, {
         supabase_vector_synced: false,
         supabase_vector_sync_status: 'skipped',
         supabase_vector_sync_error: 'Case is not eligible for Supabase vector sync',
       });
       return {
-        submissionId: caseRecord.submission_id,
+        submissionId: qualityCase.submission_id,
         status: 'skipped',
         reason: 'Case is not eligible for Supabase vector sync',
       };
     }
 
-    const preparedCase = await this.ensureEmbedding(caseRecord);
+    const requiredFieldError = this.getRequiredPayloadFieldError(qualityCase);
+    if (requiredFieldError) {
+      await this.updateSyncStatus(qualityCase.submission_id, {
+        supabase_vector_synced: false,
+        supabase_vector_sync_status: 'failed',
+        supabase_vector_sync_error: requiredFieldError,
+      });
+      return {
+        submissionId: qualityCase.submission_id ?? 'unknown',
+        status: 'failed',
+        reason: requiredFieldError,
+      };
+    }
+
+    const preparedCase = await this.ensureEmbedding(qualityCase);
 
     if (!preparedCase.image_embedding?.length) {
-      await this.updateSyncStatus(caseRecord.submission_id, {
+      await this.updateSyncStatus(qualityCase.submission_id, {
         supabase_vector_synced: false,
         supabase_vector_sync_status: 'failed',
         supabase_vector_sync_error:
           'Embedding provider unavailable or insufficient data',
       });
       return {
-        submissionId: caseRecord.submission_id,
+        submissionId: qualityCase.submission_id,
         status: 'failed',
         reason: 'Embedding provider unavailable or insufficient data',
       };
@@ -172,13 +185,13 @@ export class SupabaseQualityVectorService {
       preparedCase.image_embedding,
     );
     if (dimensionError) {
-      await this.updateSyncStatus(caseRecord.submission_id, {
+      await this.updateSyncStatus(qualityCase.submission_id, {
         supabase_vector_synced: false,
         supabase_vector_sync_status: 'failed',
         supabase_vector_sync_error: dimensionError,
       });
       return {
-        submissionId: caseRecord.submission_id,
+        submissionId: qualityCase.submission_id,
         status: 'failed',
         reason: dimensionError,
       };
@@ -197,7 +210,7 @@ export class SupabaseQualityVectorService {
       }
 
       const syncedAt = new Date().toISOString();
-      await this.updateSyncStatus(caseRecord.submission_id, {
+      await this.updateSyncStatus(qualityCase.submission_id, {
         supabase_vector_synced: true,
         supabase_vector_synced_at: syncedAt,
         supabase_vector_id:
@@ -210,13 +223,13 @@ export class SupabaseQualityVectorService {
       });
       await this.qualityCaseDatasetModel
         .findOneAndUpdate(
-          { submission_id: caseRecord.submission_id },
+          { submission_id: qualityCase.submission_id },
           { $unset: { supabase_vector_sync_error: '' } },
         )
         .exec();
 
       return {
-        submissionId: caseRecord.submission_id,
+        submissionId: qualityCase.submission_id,
         status: 'synced',
         supabaseVectorId:
           data && typeof data === 'object' && 'id' in data
@@ -224,17 +237,17 @@ export class SupabaseQualityVectorService {
             : undefined,
       };
     } catch (error) {
-      const message = String(error);
+      const message = this.formatError(error);
       this.logger.warn(
-        `Failed to sync quality case vector ${caseRecord.submission_id}: ${message}`,
+        `Failed to sync quality case vector ${qualityCase.submission_id}: ${message}`,
       );
-      await this.updateSyncStatus(caseRecord.submission_id, {
+      await this.updateSyncStatus(qualityCase.submission_id, {
         supabase_vector_synced: false,
         supabase_vector_sync_status: 'failed',
         supabase_vector_sync_error: message,
       });
       return {
-        submissionId: caseRecord.submission_id,
+        submissionId: qualityCase.submission_id,
         status: 'failed',
         reason: message,
       };
@@ -365,7 +378,9 @@ export class SupabaseQualityVectorService {
         created_at: row.created_at ?? row.synced_at ?? new Date().toISOString(),
       }));
     } catch (error) {
-      this.logger.warn(`Supabase quality vector search failed: ${String(error)}`);
+      this.logger.warn(
+        `Supabase quality vector search failed: ${this.formatError(error)}`,
+      );
       return [];
     }
   }
@@ -406,21 +421,23 @@ export class SupabaseQualityVectorService {
   private async ensureEmbedding(
     caseRecord: QualityCaseDatasetRecord,
   ): Promise<QualityCaseDatasetRecord> {
-    if (caseRecord.image_embedding?.length) {
-      return caseRecord;
+    const normalizedCaseRecord = this.toPlainCaseRecord(caseRecord);
+
+    if (normalizedCaseRecord.image_embedding?.length) {
+      return normalizedCaseRecord;
     }
 
     const result = await this.imageEmbeddingService.generateForQualityCase({
-      imageUrl: caseRecord.image_url,
-      visualObservation: caseRecord.ai_visual_observations,
-      wasteType: caseRecord.waste_type,
+      imageUrl: normalizedCaseRecord.image_url,
+      visualObservation: normalizedCaseRecord.ai_visual_observations,
+      wasteType: normalizedCaseRecord.waste_type,
     });
 
-    if (!result) return caseRecord;
+    if (!result) return normalizedCaseRecord;
 
     await this.qualityCaseDatasetModel
       .findOneAndUpdate(
-        { submission_id: caseRecord.submission_id },
+        { submission_id: normalizedCaseRecord.submission_id },
         {
           $set: {
             image_embedding: result.embedding,
@@ -437,7 +454,7 @@ export class SupabaseQualityVectorService {
       .exec();
 
     return {
-      ...caseRecord,
+      ...normalizedCaseRecord,
       image_embedding: result.embedding,
       image_embedding_model: result.model,
       image_embedding_source: result.source,
@@ -454,6 +471,46 @@ export class SupabaseQualityVectorService {
     return embedding.length === expectedDimensions
       ? null
       : `Embedding dimension mismatch: expected ${expectedDimensions}, got ${embedding.length}`;
+  }
+
+  private getRequiredPayloadFieldError(
+    caseRecord: QualityCaseDatasetRecord,
+  ): string | null {
+    const missingFields = [
+      caseRecord.submission_id?.trim() ? undefined : 'submission_id',
+      caseRecord.waste_type ? undefined : 'waste_type',
+      this.getVisualObservationText(caseRecord) ? undefined : 'visual_observation_text',
+    ].filter(Boolean);
+
+    return missingFields.length
+      ? `Missing required Supabase vector payload fields: ${missingFields.join(', ')}`
+      : null;
+  }
+
+  private getVisualObservationText(caseRecord: QualityCaseDatasetRecord): string {
+    const normalizedCaseRecord = this.toPlainCaseRecord(caseRecord);
+
+    return (
+      this.imageEmbeddingService.buildVisualObservationText({
+        imageUrl: normalizedCaseRecord.image_url,
+        visualObservation: normalizedCaseRecord.ai_visual_observations,
+        wasteType: normalizedCaseRecord.waste_type,
+      }) ||
+      normalizedCaseRecord.ai_visual_observations?.visualObservation ||
+      ''
+    );
+  }
+
+  private toPlainCaseRecord(
+    caseRecord: QualityCaseDatasetRecord,
+  ): QualityCaseDatasetRecord {
+    const maybeDocument = caseRecord as QualityCaseDatasetRecord & {
+      toObject?: () => QualityCaseDatasetRecord;
+    };
+
+    return typeof maybeDocument.toObject === 'function'
+      ? maybeDocument.toObject()
+      : caseRecord;
   }
 
   private async updateSyncStatus(
@@ -498,5 +555,35 @@ export class SupabaseQualityVectorService {
     return Object.fromEntries(
       Object.entries(value).filter(([, item]) => item !== undefined),
     ) as T;
+  }
+
+  private formatError(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    if (error && typeof error === 'object') {
+      const payload = error as Record<string, unknown>;
+      const summary = [
+        payload.code ? `code=${String(payload.code)}` : undefined,
+        payload.message ? `message=${String(payload.message)}` : undefined,
+        payload.details ? `details=${String(payload.details)}` : undefined,
+        payload.hint ? `hint=${String(payload.hint)}` : undefined,
+      ]
+        .filter(Boolean)
+        .join('; ');
+
+      if (summary) {
+        return summary;
+      }
+
+      try {
+        return JSON.stringify(payload);
+      } catch {
+        return Object.prototype.toString.call(error);
+      }
+    }
+
+    return String(error);
   }
 }

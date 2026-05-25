@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 type HttpHandler = (req: unknown, res: unknown) => unknown;
@@ -43,12 +44,20 @@ function configureAppCors(app: Awaited<ReturnType<typeof NestFactory.create>>) {
   });
 }
 
+function configureBodyParser(app: Awaited<ReturnType<typeof NestFactory.create>>) {
+  // Images are submitted as base64 data URLs for the MVP. A 10 MB image becomes
+  // larger in JSON, so the request body limit needs headroom above the UI limit.
+  app.use(json({ limit: '15mb' }));
+  app.use(urlencoded({ limit: '15mb', extended: true }));
+}
+
 async function getCloudFunctionServer(): Promise<HttpHandler> {
   if (cachedServer) {
     return cachedServer;
   }
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  configureBodyParser(app);
   configureAppCors(app);
   await app.init();
   cachedServer = app.getHttpAdapter().getInstance() as HttpHandler;
@@ -62,7 +71,8 @@ export async function cuanLimbah(req: unknown, res: unknown) {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  configureBodyParser(app);
   configureAppCors(app);
 
   await app.listen(process.env.PORT ?? 3000);

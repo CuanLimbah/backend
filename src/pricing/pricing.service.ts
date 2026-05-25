@@ -3,6 +3,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import type { QualityGrade, WasteType } from '../common/models';
 import { toCurrencyAmount } from '../common/utils';
+import {
+  getPriceUnitSuffix,
+  getWasteQuantityLabel,
+  getWasteQuantityUnit,
+  getWasteQuantityUnitLabel,
+} from '../common/waste-unit.utils';
 import { WastePriceEntity } from '../database/schemas/price.schema';
 import {
   PRICING_MODEL_VERSION,
@@ -53,6 +59,8 @@ export class PricingService {
       throw new NotFoundException('Harga untuk jenis limbah ini tidak ditemukan');
     }
 
+    // price_per_kg is kept for schema compatibility; for oil it is displayed
+    // and explained as price per liter.
     return this.normalizePositiveNumber(price.price_per_kg, 'price_per_kg');
   }
 
@@ -63,6 +71,10 @@ export class PricingService {
     this.assertWasteType(input.wasteType);
 
     const weightKg = this.normalizePositiveNumber(input.weightKg, 'weightKg');
+    const quantity = weightKg;
+    const unit = getWasteQuantityUnit(input.wasteType);
+    const unitLabel = getWasteQuantityUnitLabel(input.wasteType);
+    const quantityLabel = getWasteQuantityLabel(input.wasteType);
     const qualityGrade = input.qualityGrade ?? 'A';
     this.assertQualityGrade(qualityGrade);
 
@@ -89,26 +101,39 @@ export class PricingService {
     return {
       wasteType: input.wasteType,
       weightKg,
+      quantity,
+      unit,
+      quantityLabel,
       qualityGrade,
       basePricePerKg,
+      basePricePerUnit: basePricePerKg,
       qualityMultiplier,
       volumeMultiplier,
       finalPricePerKg,
+      finalPricePerUnit: finalPricePerKg,
       earnings,
       pricingModelVersion: PRICING_MODEL_VERSION,
       breakdown: {
         formula:
-          'basePricePerKg x qualityMultiplier x volumeMultiplier x weightKg',
+          input.wasteType === 'oil'
+            ? 'basePricePerLiter x qualityMultiplier x volumeMultiplier x quantityLiter'
+            : 'basePricePerKg x qualityMultiplier x volumeMultiplier x weightKg',
         basePricePerKg,
+        basePricePerUnit: basePricePerKg,
         qualityMultiplier,
         volumeMultiplier,
         weightKg,
+        quantity,
+        unit,
+        quantityLabel,
+        finalPricePerUnit: finalPricePerKg,
         zeroPayout,
         zeroPayoutReason,
       },
       explanation: this.buildExplanation({
         wasteType: input.wasteType,
         weightKg,
+        unitLabel,
         qualityGrade,
         basePricePerKg,
         qualityMultiplier,
@@ -128,6 +153,7 @@ export class PricingService {
   private buildExplanation(input: {
     wasteType: WasteType;
     weightKg: number;
+    unitLabel: string;
     qualityGrade: QualityGrade;
     basePricePerKg: number;
     qualityMultiplier: number;
@@ -140,12 +166,14 @@ export class PricingService {
     const label =
       input.wasteType === 'food' ? 'limbah makanan' : 'minyak jelantah';
     const prefix = input.mode === 'estimate' ? 'Estimasi cuan' : 'Cuan final';
+    const unitSuffix = getPriceUnitSuffix(input.wasteType);
+    const quantityText = `${input.weightKg} ${input.unitLabel}`;
 
     if (input.zeroPayout) {
-      return `${prefix} untuk ${input.weightKg} kg ${label} grade ${input.qualityGrade} adalah Rp ${input.earnings.toLocaleString('id-ID')}. Perhitungan: harga dasar Rp ${input.basePricePerKg.toLocaleString('id-ID')}/kg x multiplier kualitas ${this.formatMultiplier(input.qualityMultiplier)} x multiplier volume ${this.formatMultiplier(input.volumeMultiplier)}. Grade ini menghasilkan payout nol pada model pricing MVP, namun setoran tetap perlu diputuskan oleh admin.`;
+      return `${prefix} untuk ${quantityText} ${label} grade ${input.qualityGrade} adalah Rp ${input.earnings.toLocaleString('id-ID')}. Perhitungan: harga dasar Rp ${input.basePricePerKg.toLocaleString('id-ID')}/${unitSuffix} x multiplier kualitas ${this.formatMultiplier(input.qualityMultiplier)} x multiplier volume ${this.formatMultiplier(input.volumeMultiplier)}. Grade ini menghasilkan payout nol pada model pricing MVP, namun setoran tetap perlu diputuskan oleh admin.`;
     }
 
-    return `${prefix} untuk ${input.weightKg} kg ${label} grade ${input.qualityGrade} adalah Rp ${input.earnings.toLocaleString('id-ID')}. Perhitungan: harga dasar Rp ${input.basePricePerKg.toLocaleString('id-ID')}/kg x multiplier kualitas ${this.formatMultiplier(input.qualityMultiplier)} x multiplier volume ${this.formatMultiplier(input.volumeMultiplier)} = Rp ${input.finalPricePerKg.toLocaleString('id-ID')}/kg.`;
+    return `${prefix} untuk ${quantityText} ${label} grade ${input.qualityGrade} adalah Rp ${input.earnings.toLocaleString('id-ID')}. Perhitungan: harga dasar Rp ${input.basePricePerKg.toLocaleString('id-ID')}/${unitSuffix} x multiplier kualitas ${this.formatMultiplier(input.qualityMultiplier)} x multiplier volume ${this.formatMultiplier(input.volumeMultiplier)} = Rp ${input.finalPricePerKg.toLocaleString('id-ID')}/${unitSuffix}.`;
   }
 
   private assertWasteType(wasteType: WasteType): void {

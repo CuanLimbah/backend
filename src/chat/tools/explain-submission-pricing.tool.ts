@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { Model } from 'mongoose';
 import { WasteSubmissionEntity } from '../../database/schemas/submission.schema';
+import {
+  getPriceUnitSuffix,
+  getWasteQuantityLabel,
+  getWasteQuantityUnitLabel,
+} from '../../common/waste-unit.utils';
 import { AgentTool, ToolContext, globalToolRegistry } from './tool.registry';
 
 let submissionModel: Model<WasteSubmissionEntity> | null = null;
@@ -27,12 +32,15 @@ function hasDynamicPricingFields(submission: WasteSubmissionEntity): boolean {
 }
 
 function buildDynamicPricingExplanation(submission: WasteSubmissionEntity): string {
+  const quantityLabel = getWasteQuantityLabel(submission.waste_type);
+  const unitLabel = getWasteQuantityUnitLabel(submission.waste_type);
+  const priceUnitSuffix = getPriceUnitSuffix(submission.waste_type);
   const lines = [
     `Setoran ${submission.id} (${getWasteTypeLabel(submission.waste_type)}) sudah dihitung dengan dynamic pricing.`,
   ];
 
   if (submission.actual_weight != null) {
-    lines.push(`Berat aktual: ${submission.actual_weight} kg.`);
+    lines.push(`${quantityLabel} aktual: ${submission.actual_weight} ${unitLabel}.`);
   }
 
   if (submission.quality_grade) {
@@ -41,13 +49,13 @@ function buildDynamicPricingExplanation(submission: WasteSubmissionEntity): stri
 
   if (submission.price_snapshot_per_kg != null) {
     lines.push(
-      `Harga dasar saat submit: ${formatRupiah(submission.price_snapshot_per_kg)}/kg.`,
+      `Harga dasar saat submit: ${formatRupiah(submission.price_snapshot_per_kg)}/${priceUnitSuffix}.`,
     );
   }
 
   if (submission.final_price_per_kg != null) {
     lines.push(
-      `Harga final / kg: ${formatRupiah(submission.final_price_per_kg)}/kg.`,
+      `Harga final / ${priceUnitSuffix}: ${formatRupiah(submission.final_price_per_kg)}/${priceUnitSuffix}.`,
     );
   }
 
@@ -108,7 +116,7 @@ const explainSubmissionPricingTool: AgentTool = {
     if (submission.earnings != null) {
       const weight =
         submission.actual_weight != null
-          ? ` dengan berat aktual ${submission.actual_weight} kg`
+          ? ` dengan ${getWasteQuantityLabel(submission.waste_type).toLowerCase()} aktual ${submission.actual_weight} ${getWasteQuantityUnitLabel(submission.waste_type)}`
           : '';
       return `Setoran ini belum memiliki breakdown dynamic pricing lengkap, tetapi total Cuan tercatat sebesar ${formatRupiah(submission.earnings)}${weight}.`;
     }
