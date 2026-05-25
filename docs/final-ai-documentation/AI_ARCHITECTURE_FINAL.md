@@ -21,6 +21,10 @@ MongoDB adalah operational database untuk data aplikasi utama:
 - metadata Multimodal RAG
 - status sync Supabase vector
 
+## Quantity Units
+
+Food waste is displayed as kilograms (`kg`). Used cooking oil is displayed as liters (`liter`) for household and UMKM workflows. Legacy fields such as `estimated_weight`, `actual_weight`, `price_per_kg`, and `final_price_per_kg` are retained for compatibility, but oil values are presented in UI and explanations as volume and price per liter.
+
 ### Supabase
 
 Supabase digunakan sebagai AI retrieval layer:

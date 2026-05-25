@@ -54,7 +54,7 @@ const baseSubmission = {
   final_price_per_kg: 2550,
   earnings: 25500,
   pricing_explanation:
-    'Cuan final memakai grade B dan harga final Rp 2.550/kg.',
+    'Cuan final memakai grade B dan harga final Rp 2.550/liter.',
 };
 
 describe('explain_quality_assessment tool', () => {
@@ -303,8 +303,9 @@ describe('explain_quality_assessment tool', () => {
       { userId: 'user-1', isAuthenticated: true, role: 'user' },
     );
 
-    expect(result).toContain('Harga dasar saat submit: Rp 3.000/kg');
-    expect(result).toContain('Harga final per kg: Rp 2.550/kg');
+    expect(result).toContain('Volume aktual: 10 Liter');
+    expect(result).toContain('Harga dasar saat submit: Rp 3.000/liter');
+    expect(result).toContain('Harga final per liter: Rp 2.550/liter');
     expect(result).toContain('Total cuan: Rp 25.500');
   });
 

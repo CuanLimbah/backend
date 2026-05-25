@@ -18,6 +18,11 @@ import {
   WasteType,
 } from '../common/models';
 import { roundToOneDecimal, toCurrencyAmount } from '../common/utils';
+import {
+  getPricePerUnitLabel,
+  getWasteQuantityLabel,
+  getWasteQuantityUnit,
+} from '../common/waste-unit.utils';
 import { WasteSubmissionEntity } from '../database/schemas/submission.schema';
 import { TransactionEntity } from '../database/schemas/transaction.schema';
 import { DropPointEntity } from '../database/schemas/drop-point.schema';
@@ -162,11 +167,11 @@ export class SubmissionsService {
       .lean()
       .exec();
 
-    return createdSubmission;
+    return this.withQuantityUnit(createdSubmission);
   }
 
-  findMine(userId: string): Promise<WasteSubmission[]> {
-    return this.submissionModel
+  async findMine(userId: string): Promise<WasteSubmission[]> {
+    const submissions = await this.submissionModel
       .find({ user_id: userId })
       .select({
         _id: 0,
@@ -178,10 +183,12 @@ export class SubmissionsService {
       .sort({ created_at: -1 })
       .lean()
       .exec();
+
+    return submissions.map((submission) => this.withQuantityUnit(submission));
   }
 
-  findPending(): Promise<WasteSubmission[]> {
-    return this.submissionModel
+  async findPending(): Promise<WasteSubmission[]> {
+    const submissions = await this.submissionModel
       .find({ status: 'pending' })
       .select({
         _id: 0,
@@ -193,6 +200,8 @@ export class SubmissionsService {
       .sort({ created_at: -1 })
       .lean()
       .exec();
+
+    return submissions.map((submission) => this.withQuantityUnit(submission));
   }
 
   async verify(id: string, dto: VerifySubmissionDto, adminId: string) {
@@ -340,7 +349,7 @@ export class SubmissionsService {
       }
     }
 
-    return updatedSubmission;
+    return this.withQuantityUnit(updatedSubmission);
   }
 
   async reject(id: string, dto: RejectSubmissionDto, adminId: string) {
@@ -394,7 +403,20 @@ export class SubmissionsService {
       },
     });
 
-    return updatedSubmission;
+    return this.withQuantityUnit(updatedSubmission);
+  }
+
+  private withQuantityUnit<T extends WasteSubmission | null>(submission: T): T {
+    if (!submission) {
+      return submission;
+    }
+
+    return {
+      ...submission,
+      quantity_unit: getWasteQuantityUnit(submission.waste_type),
+      quantity_label: getWasteQuantityLabel(submission.waste_type),
+      price_unit_label: getPricePerUnitLabel(submission.waste_type),
+    };
   }
 
   private isSupportedWasteType(wasteType: WasteType): boolean {

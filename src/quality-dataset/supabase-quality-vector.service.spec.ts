@@ -181,6 +181,40 @@ describe('SupabaseQualityVectorService', () => {
     );
   });
 
+  it('normalizes Mongoose documents before generating embedding and syncing', async () => {
+    const embedding = Array.from({ length: 1024 }, (_, index) => index / 1024);
+    const documentCase = {
+      submission_id: 'sub-1',
+      eligibility_status: 'eligible',
+      toObject: jest.fn(() => ({
+        ...baseCase,
+        image_embedding: undefined,
+        image_embedding_model: undefined,
+        image_embedding_source: undefined,
+      })),
+    };
+    const { service, upsert } = createService({
+      embeddingResult: {
+        embedding,
+        model: 'mistral:mistral-embed',
+        source: 'visual_text_embedding',
+      },
+    });
+
+    const result = await service.upsertCaseVector(documentCase as any);
+
+    expect(result.status).toBe('synced');
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        submission_id: 'sub-1',
+        waste_type: 'oil',
+        visual_observation_text: 'Waste type: oil. Notes: Minyak agak keruh.',
+        embedding,
+      }),
+      { onConflict: 'submission_id' },
+    );
+  });
+
   it('fails sync on embedding dimension mismatch', async () => {
     const { service } = createService();
 

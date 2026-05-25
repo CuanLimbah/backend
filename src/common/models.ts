@@ -4,6 +4,8 @@ export type UserStatus = 'active' | 'inactive';
 
 export type WasteType = 'food' | 'oil';
 
+export type WasteQuantityUnit = 'kg' | 'liter';
+
 export type QualityGrade = 'A' | 'B' | 'C';
 
 export type ContaminationLevel = 'none' | 'low' | 'medium' | 'high';
@@ -130,6 +132,9 @@ export interface WasteSubmission {
   user_id: string;
   waste_type: WasteType;
   estimated_weight: number;
+  quantity_unit?: WasteQuantityUnit;
+  quantity_label?: string;
+  price_unit_label?: string;
   actual_weight?: number;
   drop_point_id?: string;
   drop_point_name?: string;

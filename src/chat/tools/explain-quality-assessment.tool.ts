@@ -7,6 +7,11 @@ import type {
   WasteSubmission,
   WasteType,
 } from '../../common/models';
+import {
+  getPriceUnitSuffix,
+  getWasteQuantityLabel,
+  getWasteQuantityUnitLabel,
+} from '../../common/waste-unit.utils';
 import { AgentTool, ToolContext, globalToolRegistry } from './tool.registry';
 
 let submissionModel: Model<WasteSubmissionEntity> | null = null;
@@ -190,6 +195,9 @@ function formatAdminDecisionSection(submission: WasteSubmission): string {
 
 function formatPricingSection(submission: WasteSubmission): string {
   const lines = ['DAMPAK KE DYNAMIC PRICING'];
+  const quantityLabel = getWasteQuantityLabel(submission.waste_type);
+  const unitLabel = getWasteQuantityUnitLabel(submission.waste_type);
+  const priceUnitSuffix = getPriceUnitSuffix(submission.waste_type);
 
   if (submission.quality_grade) {
     lines.push(
@@ -203,14 +211,16 @@ function formatPricingSection(submission: WasteSubmission): string {
     submission.price_snapshot_per_kg != null ||
     submission.actual_weight != null
   ) {
-    lines.push(`- Berat aktual: ${formatOptional(submission.actual_weight)} kg`);
+    lines.push(
+      `- ${quantityLabel} aktual: ${formatOptional(submission.actual_weight)} ${unitLabel}`,
+    );
     lines.push(
       `- Harga dasar saat submit: ${formatRupiah(
         submission.price_snapshot_per_kg,
-      )}/kg`,
+      )}/${priceUnitSuffix}`,
     );
     lines.push(
-      `- Harga final per kg: ${formatRupiah(submission.final_price_per_kg)}/kg`,
+      `- Harga final per ${priceUnitSuffix}: ${formatRupiah(submission.final_price_per_kg)}/${priceUnitSuffix}`,
     );
     lines.push(`- Total cuan: ${formatRupiah(submission.earnings)}`);
     if (submission.pricing_explanation) {
