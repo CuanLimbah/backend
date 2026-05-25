@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { generateText } from 'ai';
+import type { DataContent } from 'ai';
 import { z } from 'zod';
-import { getLlmModel } from '../chat/llm.factory';
+import { getVisionModel } from '../chat/llm.factory';
 import type { AiVisualObservations, WasteType } from '../common/models';
 
 const VisualObservationSchema = z.object({
@@ -24,6 +25,8 @@ const VisualObservationSchema = z.object({
 
 @Injectable()
 export class QualityVisionService {
+  private readonly logger = new Logger(QualityVisionService.name);
+
   constructor(private readonly config: ConfigService) {}
 
   async analyzeWasteImage(input: {
@@ -38,7 +41,7 @@ export class QualityVisionService {
 
     try {
       const { text } = await generateText({
-        model: getLlmModel(this.config),
+        model: getVisionModel(this.config),
         system: `You are AI Vision Quality Inspector for CuanLimbah.
 
 Analyze the waste image and return visual observations only.
@@ -96,7 +99,7 @@ Guardrails:
               },
               {
                 type: 'image',
-                image: new URL(input.imageUrl),
+                image: this.buildImageContent(input.imageUrl),
               },
             ],
           },
@@ -108,7 +111,8 @@ Guardrails:
       );
 
       return this.applyVisionSafety(parsed);
-    } catch {
+    } catch (error) {
+      this.logger.warn(`Vision analysis fallback used: ${String(error)}`);
       return this.getFallbackObservation(
         'Analisis visual gagal dijalankan atau foto tidak dapat diakses. Admin perlu menilai foto secara manual.',
       );
@@ -196,7 +200,19 @@ Guardrails:
   }
 
   private getProvider(): string {
-    return (this.config.get<string>('LLM_PROVIDER') || 'mistral').toLowerCase();
+    return (
+      this.config.get<string>('VISION_PROVIDER') ||
+      this.config.get<string>('LLM_PROVIDER') ||
+      'mistral'
+    ).toLowerCase();
+  }
+
+  private buildImageContent(imageUrl: string): URL | DataContent {
+    if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(imageUrl)) {
+      return imageUrl;
+    }
+
+    return new URL(imageUrl);
   }
 
   private extractJsonObject(text: string): string {
