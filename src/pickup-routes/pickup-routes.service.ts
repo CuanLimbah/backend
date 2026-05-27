@@ -73,8 +73,8 @@ export class PickupRoutesService {
       throw new BadRequestException('Setoran ini sudah memiliki rute penjemputan aktif');
     }
 
-    if (submission.status !== 'pending') {
-      throw new BadRequestException('Hanya setoran pending yang bisa dijadwalkan');
+    if (submission.status !== 'completed') {
+      throw new BadRequestException('Hanya setoran yang sudah diverifikasi yang bisa dijadwalkan');
     }
 
     const now = new Date();

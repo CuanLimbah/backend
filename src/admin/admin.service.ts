@@ -35,7 +35,18 @@ export class AdminService {
   ) {}
 
   async getDashboard() {
-    const [stats, prices, dropPoints, pendingSubmissions, users, drivers, pickupRoutes, payments, withdrawals] =
+    const [
+      stats,
+      prices,
+      dropPoints,
+      pendingSubmissions,
+      assignableSubmissions,
+      users,
+      drivers,
+      pickupRoutes,
+      payments,
+      withdrawals,
+    ] =
       await Promise.all([
         this.getStats(),
         this.priceModel.find().select({ _id: 0, __v: 0 }).sort({ waste_type: 1 }).lean().exec(),
@@ -52,6 +63,18 @@ export class AdminService {
           .sort({ created_at: -1 })
           .lean()
           .exec(),
+        this.submissionModel
+          .find({ status: 'completed' })
+          .select({
+            _id: 0,
+            __v: 0,
+            storage_provider: 0,
+            storage_status: 0,
+            cloudinary_public_id: 0,
+          })
+          .sort({ verified_at: -1, completed_at: -1, created_at: -1 })
+          .lean()
+          .exec(),
         this.getUsers(),
         this.getDrivers(),
         this.pickupRouteModel.find().select({ _id: 0, __v: 0 }).sort({ scheduled_at: -1 }).lean().exec(),
@@ -64,6 +87,7 @@ export class AdminService {
       prices,
       drop_points: dropPoints,
       pending_submissions: pendingSubmissions,
+      assignable_submissions: assignableSubmissions,
       users,
       drivers,
       pickup_routes: pickupRoutes,
